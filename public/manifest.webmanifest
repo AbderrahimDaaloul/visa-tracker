@@ -1,0 +1,16 @@
+{
+  "name": "VisaTrack TN",
+  "short_name": "VisaTrack",
+  "description": "Suivi crowdsourcé des délais de visa d'études en Italie pour étudiants tunisiens",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f8fafc",
+  "theme_color": "#ea580c",
+  "icons": [
+    {
+      "src": "/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml"
+    }
+  ]
+}

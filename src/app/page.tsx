@@ -1,69 +1,61 @@
-import Image from "next/image";
+import Link from "next/link";
+import { t } from "@/lib/i18n";
+import { Badge } from "@/components/ui";
 
 export default function Home() {
   return (
-    <div className="flex flex-col flex-1 items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex flex-1 w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert h-5 w-[100px]"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the{" "}
-            <code className="rounded bg-black/[.06] px-1.5 py-0.5 font-mono text-[0.9em] dark:bg-white/[.08]">
-              page.tsx
-            </code>{" "}
-            file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
+    <div className="space-y-8">
+      <section className="mx-auto max-w-3xl py-8 text-center">
+        <Badge color="primary">Étudiants tunisiens · visa Italie</Badge>
+        <h1 className="mt-3 text-3xl font-extrabold leading-tight sm:text-4xl">{t.home.title}</h1>
+        <p className="mx-auto mt-3 max-w-xl text-muted">{t.home.subtitle}</p>
+        <div className="mt-6 flex flex-col items-center justify-center gap-3 sm:flex-row">
+          <Link href="/contribute" className="btn w-full sm:w-auto">
+            <button className="h-12 w-full rounded-xl bg-[var(--primary)] px-6 font-bold text-[var(--primary-fg)] hover:bg-[var(--primary-hover)] sm:w-auto">
+              {t.home.contribute} →
+            </button>
+          </Link>
+          <Link href="/visualize" className="w-full sm:w-auto">
+            <button className="h-12 w-full rounded-xl border border-[var(--border)] bg-[var(--surface)] px-6 font-bold hover:bg-[var(--background)] sm:w-auto">
+              {t.home.visualize} →
+            </button>
+          </Link>
         </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert h-[14px] w-4"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={14}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
-        </div>
-      </main>
+      </section>
+
+      <section className="grid grid-cols-1 gap-5 sm:grid-cols-2">
+        <Link href="/contribute" className="card block p-6 transition hover:shadow-lg">
+          <h2 className="text-lg font-bold">{t.home.contribute}</h2>
+          <p className="mt-1 text-sm text-muted">{t.home.contributeDesc}</p>
+          <p className="mt-4 text-sm font-semibold text-[var(--primary)]">3 cartes simples, aucun document à téléverser</p>
+        </Link>
+        <Link href="/visualize" className="card block p-6 transition hover:shadow-lg">
+          <h2 className="text-lg font-bold">{t.home.visualize}</h2>
+          <p className="mt-1 text-sm text-muted">{t.home.visualizeDesc}</p>
+          <p className="mt-4 text-sm font-semibold text-[var(--primary)]">17 graphiques : délais, taux, calendrier des créneaux…</p>
+        </Link>
+      </section>
+
+      <section className="grid grid-cols-1 gap-5 sm:grid-cols-2">
+        <Link href="/journey" className="card block p-6 transition hover:shadow-lg">
+          <h2 className="text-lg font-bold">{t.home.journey}</h2>
+          <p className="mt-1 text-sm text-muted">« Suis-je en retard ? » comparez votre attente à la médiane de votre centre.</p>
+        </Link>
+        <Link href="/cohorts" className="card block p-6 transition hover:shadow-lg">
+          <h2 className="text-lg font-bold">{t.home.cohorts}</h2>
+          <p className="mt-1 text-sm text-muted">Que s′est-il passé pour les étudiants avec votre même date de rendez-vous ou d′envoi ?</p>
+        </Link>
+      </section>
+
+      <section className="card mx-auto max-w-3xl p-5 text-sm">
+        <h2 className="font-bold">Comment ça marche</h2>
+        <ol className="mt-2 list-decimal space-y-1 pl-5 text-muted">
+          <li>Créez un compte (email vérifié, pseudo — jamais de nom réel).</li>
+          <li>Ajoutez vos dates : rendez-vous, dossier envoyé, réponse.</li>
+          <li>Tout le monde voit les tendances ; votre participation les rend précises.</li>
+        </ol>
+        <p className="mt-4 rounded-lg border-l-4 border-[var(--primary)] bg-[var(--background)] p-3 text-xs">{t.home.disclaimer}</p>
+      </section>
     </div>
   );
 }
