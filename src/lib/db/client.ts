@@ -39,6 +39,11 @@ async function createDb(): Promise<AppDb> {
     const { drizzle } = await import("drizzle-orm/postgres-js");
     return drizzle(pg, { schema });
   }
+  if (process.env.VERCEL || process.env.NODE_ENV === "production") {
+    throw new Error(
+      "DATABASE_URL is not set. On Vercel, add it under Project → Settings → Environment Variables for the Production environment, then redeploy."
+    );
+  }
   const { PGlite } = await import("@electric-sql/pglite");
   const dataDir = process.env.PGLITE_DATA_DIR ?? ".data/pglite";
   const client = await new PGlite(dataDir);
