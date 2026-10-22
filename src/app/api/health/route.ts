@@ -10,7 +10,12 @@ export const dynamic = "force-dynamic";
 
 export function GET(): Promise<NextResponse> {
   return withApi(async () => {
-    await checkDbConnected();
+    try {
+      await checkDbConnected();
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      return json({ ok: false, database: "unreachable", error: msg }, 500);
+    }
     const db = await ensureDb();
     const counts = await db.execute(sql`
       SELECT

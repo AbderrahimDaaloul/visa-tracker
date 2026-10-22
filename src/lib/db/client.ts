@@ -40,8 +40,11 @@ async function createDb(): Promise<AppDb> {
     return drizzle(pg, { schema });
   }
   if (process.env.VERCEL || process.env.NODE_ENV === "production") {
+    const looksLikeUrl = !!process.env.NEXT_PUBLIC_APP_URL;
+    const dbKeys = Object.keys(process.env).filter((k) => /DATABASE|POSTGRES|PG|SUPABASE/i.test(k));
     throw new Error(
-      "DATABASE_URL is not set. On Vercel, add it under Project → Settings → Environment Variables for the Production environment, then redeploy."
+      `DATABASE_URL is not set at runtime. Visible db-related env keys: [${dbKeys.join(", ") || "none"}]. appUrl=${looksLikeUrl}. ` +
+        `Add DATABASE_URL under Project → Settings → Environment Variables for the Production environment, then redeploy.`
     );
   }
   const { PGlite } = await import("@electric-sql/pglite");
