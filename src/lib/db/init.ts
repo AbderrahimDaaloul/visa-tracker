@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { getDb } from "./client";
+import { getDb, rowsOf } from "./client";
 import { ensureSchema } from "./ddl";
 import { ensureReferenceData } from "./reference";
 import { seedDemoData } from "./seed";
@@ -28,7 +28,7 @@ export async function ensureAppInit(): Promise<void> {
 async function migrateShowPseudoDefault(): Promise<void> {
   const db = await getDb();
   const marker = await db.execute(sql`SELECT value FROM meta WHERE key = 'migration_show_pseudo_default'`);
-  const rows = (marker as unknown as { rows: { value: string }[] }).rows;
+  const rows = rowsOf<{ value: string }>(marker);
   if (rows.length > 0) return;
   await db.execute(sql`UPDATE users SET show_pseudo_in_cohorts = true`);
   await db.execute(sql`
