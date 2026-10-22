@@ -295,13 +295,50 @@ export function stackedBarOption(data: { bucket: string; accorde: number; refuse
   } as unknown as EChartsOption;
 }
 
-export function timelineOption(data: { date: string; count: number }[]): EChartsOption {
+export function dailyLineOption(
+  data: { date: string; count: number }[],
+  seriesName: string,
+  color = PAL[4]
+): EChartsOption {
   return {
     tooltip: { trigger: "axis", textStyle: { fontSize: 11 } },
     grid: { left: 36, right: 12, top: 16, bottom: 24 },
     xAxis: { type: "category", data: data.map((d) => d.date.slice(5)), ...axisCommon, axisLabel: { fontSize: 9, color: "#64748b", interval: 14 } },
-    yAxis: { type: "value", name: "Réponses", ...axisCommon },
-    series: [{ type: "bar", barMaxWidth: 8, itemStyle: { color: PAL[4] }, data: data.map((d) => d.count) }],
+    yAxis: { type: "value", name: seriesName, minInterval: 1, ...axisCommon },
+    series: [
+      {
+        name: seriesName,
+        type: "line",
+        smooth: true,
+        showSymbol: false,
+        lineStyle: { color, width: 2.5 },
+        areaStyle: { color, opacity: 0.12 },
+        data: data.map((d) => d.count),
+      },
+    ],
+  } as unknown as EChartsOption;
+}
+
+export function timelineOption(data: { date: string; count: number }[]): EChartsOption {
+  return dailyLineOption(data, "Réponses", PAL[4]);
+}
+
+export function countBarsOption(data: { label: string; count: number }[], seriesName = "Nombre"): EChartsOption {
+  return {
+    tooltip: { trigger: "axis", textStyle: { fontSize: 11 } },
+    grid: { left: 40, right: 12, top: 24, bottom: 24 },
+    xAxis: { type: "category", data: data.map((d) => d.label), ...axisCommon },
+    yAxis: { type: "value", name: seriesName, minInterval: 1, ...axisCommon },
+    series: [
+      {
+        name: seriesName,
+        type: "bar",
+        barMaxWidth: 42,
+        itemStyle: { color: PAL[2] },
+        label: { show: true, position: "top", fontSize: 11, color: "#374151" },
+        data: data.map((d) => d.count),
+      },
+    ],
   } as unknown as EChartsOption;
 }
 

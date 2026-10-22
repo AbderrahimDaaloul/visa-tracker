@@ -2,94 +2,58 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useQuery } from "@tanstack/react-query";
 import { Select, Label } from "./ui";
 import { t } from "@/lib/i18n";
+import { MONTHS_FR } from "@/lib/constants";
 
-type Center = { id: number; name: string; city: string | null };
+export function currentMonth(): number {
+  return new Date().getUTCMonth() + 1;
+}
+
+export function currentYear(): number {
+  return new Date().getUTCFullYear();
+}
+
+const YEARS = [currentYear() - 2, currentYear() - 1, currentYear(), currentYear() + 1];
 
 export function GlobalFilters() {
   const router = useRouter();
   const sp = useSearchParams();
-  const { data } = useQuery<{ centers: Center[] }>({
-    queryKey: ["centers"],
-    queryFn: async () => fetch("/api/centers").then((r) => r.json()),
-  });
 
   const set = (key: string, value: string) => {
     const params = new URLSearchParams(sp.toString());
-    if (value && value !== "all") params.set(key, value);
+    params.delete("centerId");
+    params.delete("visaType");
+    params.delete("intake");
+    if (value) params.set(key, value);
     else params.delete(key);
     router.push(`/visualize?${params.toString()}`, { scroll: false });
   };
 
   const current = (key: string, dflt: string) => sp.get(key) ?? dflt;
 
-  const intakes = useMemo(() => {
-    const out: string[] = [];
-    const now = new Date();
-    for (let y = now.getUTCFullYear() - 1; y <= now.getUTCFullYear() + 2; y++) {
-      for (const m of ["01", "05", "09"] as const) out.push(`${y}-${m}`);
-    }
-    return out;
-  }, []);
-
   return (
-    <div className="card mb-4 grid grid-cols-2 gap-3 p-4 sm:grid-cols-3 lg:grid-cols-5">
+    <div className="card mb-4 grid grid-cols-2 gap-3 p-4 sm:grid-cols-4">
       <div>
-        <Label>{t.dashboard.center}</Label>
-        <Select value={current("centerId", "all")} onChange={(e) => set("centerId", e.target.value)}>
-          <option value="all">{t.dashboard.all}</option>
-          {data?.centers?.map((c) => (
-            <option key={c.id} value={c.id}>
-              {c.name}
+        <Label>{t.dashboard.month}</Label>
+        <Select value={current("month", String(currentMonth()))} onChange={(e) => set("month", e.target.value)}>
+          {MONTHS_FR.map((label, i) => (
+            <option key={label} value={i + 1}>
+              {label}
             </option>
           ))}
         </Select>
       </div>
       <div>
-        <Label>{t.dashboard.visaType}</Label>
-        <Select value={current("visaType", "all")} onChange={(e) => set("visaType", e.target.value)}>
-          <option value="all">{t.dashboard.all}</option>
-          <option value="etudiant_d">Visa étudiant D</option>
-          <option value="cours_langue">Cours de langue</option>
-          <option value="autre">Autre</option>
-        </Select>
-      </div>
-      <div>
-        <Label>{t.dashboard.intake}</Label>
-        <Select value={current("intake", "all")} onChange={(e) => set("intake", e.target.value)}>
-          <option value="all">{t.dashboard.all}</option>
-          {intakes.map((i) => (
-            <option key={i} value={i}>
-              {i}
+        <Label>{t.dashboard.year}</Label>
+        <Select value={current("year", String(currentYear()))} onChange={(e) => set("year", e.target.value)}>
+          {YEARS.map((y) => (
+            <option key={y} value={y}>
+              {y}
             </option>
           ))}
         </Select>
       </div>
-      <div>
-        <Label>{t.dashboard.period}</Label>
-        <Select
-          value={current("range", "12mois")}
-          onChange={(e) => {
-            const v = e.target.value;
-            const params = new URLSearchParams(sp.toString());
-            params.delete("from");
-            params.delete("to");
-            if (v !== "tout") params.set("range", v);
-            else params.set("range", "tout");
-            router.push(`/visualize?${params.toString()}`, { scroll: false });
-          }}
-        >
-          <option value="3mois">3 mois</option>
-          <option value="6mois">6 mois</option>
-          <option value="12mois">12 mois</option>
-          <option value="tout">Tout</option>
-        </Select>
-      </div>
-      <p className="col-span-2 self-end text-[11px] text-muted sm:col-span-1">
-        {t.footer.disclaimer}
-      </p>
     </div>
   );
 }
@@ -104,19 +68,16 @@ export function useDashboardFilters() {
   useEffect(() => setReady(true), []);
   return useMemo(() => {
     const params = new URLSearchParams();
-    const copy = (k: string) => {
-      const v = sp.get(k);
-      if (v && v !== "all") params.set(k, v);
-    };
-    copy("centerId");
-    copy("visaType");
-    copy("intake");
-    // period range filter -> from/to
-    const range = sp.get("range") ?? "12mois";
-    if (range !== "tout") {
-      const months = range === "3mois" ? 3 : range === "6mois" ? 6 : 12;
-      params.set("from", new Date(Date.now() - months * 30 * 86400000).toISOString().slice(0, 10));
-    }
+    params.set("fixed", "1");
+
+    const rawMonth = Number(sp.get("month"));
+    const month = Number.isInteger(rawMonth) && rawMonth >= 1 && rawMonth <= 12 ? rawMonth : currentMonth();
+    params.set("month", String(month));
+
+    const rawYear = Number(sp.get("year"));
+    const year = Number.isInteger(rawYear) && rawYear >= 2000 && rawYear <= 2100 ? rawYear : currentYear();
+    params.set("year", String(year));
+
     return ready ? params.toString() : null;
   }, [sp, ready]);
 }

@@ -106,3 +106,48 @@ npm run dev         # http://localhost:3000
 - `src/lib/auth.ts` — temp debug retiré (plus de logs).
 - `.env.local` (nouveau), `postcss.config.mjs` (nouveau), `package.json` (+`@tailwindcss/postcss`).
 - `src/lib/contribution.ts` — slotBookedOn appliqué aux updates.
+
+---
+
+## 10. Session 2 — finition (20 octobre 2026)
+
+- Correction du funnel de la page « Mon parcours » (`responses_recues`) et du libellé de zone (« en avance »).
+- Seed aligné sur le vocabulaire canonique (`etudiant_d`), centres pondérés par type (VFS/ambassade/autre) et intakes 01/05/09 ; migration de réparation `seed_version = 2`.
+- Emails de démonstration désormais chiffrés (AES-256-GCM, IV aléatoire) ; déchiffrement rétro-compatible des anciennes valeurs en clair.
+- Paramètres : les préférences de notifications sont chargées puis enregistrées (`/api/me` renvoie `prefs`).
+- Suppression de candidature depuis la page Contribuer (confirmation en deux temps).
+- Sécurité : requêtes admin/cohortes/suppression de compte paramétrées, garde-fous anti-auto-bannissement et anti-bannissement de l'équipe, validation renforcée des contributions.
+- Journal d'audit persisté (`audit_log`) et affiché dans la console admin ; retours d'erreur visibles.
+- Navigation mobile : lien Admin ajouté.
+- Tests : 44 tests (stats, contribution, crypto), `tsc`, `eslint` et `npm run build` verts.
+
+## 11. Session 2 � durcissement production / Supabase (20 octobre 2026)
+
+- OTP production : plus aucun devCode hors d�veloppement ; sans RESEND_API_KEY, l'API r�pond 503 avec un message clair et n'enregistre pas de code.
+- ADMIN_EMAILS : bootstrap des administrateurs � la premi�re connexion (promotion d'un compte existant incluse).
+- Donn�es de d�monstration strictement opt-in (SEED_DEMO=1) ; les 3 centres de r�f�rence sont cr��s s�par�ment et syst�matiquement (index unique centers_name_unique, ON CONFLICT (name) DO NOTHING).
+- GET /api/health : �tat base, compteurs, email et admins configur�s.
+- 
+pm run db:init : initialisation idempotente du sch�ma + centres (utilisable avant le premier d�marrage Supabase).
+- Connexion Postgres : timeout de connexion/veille, r�initialisation du pool en cas d'�chec (cold start).
+- Purge des codes OTP expir�s depuis plus de 24 h ; wipeAll inclut udit_log.
+- .env.example / .env.local / README : configuration Supabase + Resend document�e (cha�ne Postgres uniquement, cl�s anon/service_role inutiles).
+- Tests : 47 tests (dont dminEmails), 	sc, eslint et 
+pm run build verts. Base neuve v�rifi�e : 3 centres, 0 candidature, 0 utilisateur ; seed opt-in v�rifi� : 560 candidatures / 640 comptes.
+- Reste � faire : renseigner DATABASE_URL Supabase + RESEND_API_KEY + ADMIN_EMAILS, puis 
+pm run db:init et 
+pm start.
+
+---
+
+## 12. Session 3 — Auth email/mot de passe + onboarding fixe (21 octobre 2026)
+
+- Auth refondue : suppression totale des codes OTP, remplacés par email + mot de passe (scrypt) et Google OAuth optionnel (bouton masqué sans `GOOGLE_CLIENT_ID`/`GOOGLE_CLIENT_SECRET`).
+- Réinitialisation de mot de passe par lien email signé (HMAC, empreinte du mot de passe, 30 min, usage unique) ; les anciens comptes OTP récupèrent un accès via « Mot de passe oublié ».
+- Schéma `users` : ajout de `password_hash` et `auth_provider` ; routes `/api/auth/request-otp` et `/verify-otp` supprimées.
+- Limites : 10 tentatives de connexion/email/15 min, 5 demandes de réinitialisation/email/heure ; sessions révoquées après changement de mot de passe.
+- Onboarding : centre fixé à **Almaviva Tunisie**, visa fixé à **Visa étudiant (long séjour D)**, session et domaine supprimés ; seul le niveau **Licence/Master** est demandé.
+- API candidatures : centre/visa/session forçés côté serveur, `intake` auto (prochain septembre), une seule candidature active par utilisateur.
+- Tableau communautaire : le filtre mois s'appuie désormais sur les dates réelles (dossier/RDV), plus sur la session.
+- Docs : README (auth, Google, onboarding, Supabase) mis à jour ; `.env.example` complété.
+- Vérifications : `npx tsc --noEmit`, `npm run lint`, `npm test` (52 tests), `npm run build`, et test runtime création de candidature (valeurs client malveillantes ignorées, doublon 409).

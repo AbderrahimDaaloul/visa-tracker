@@ -1,7 +1,7 @@
 import { sql } from "drizzle-orm";
 import { getDb } from "./client";
 import { applications, users } from "./schema";
-import { sha256Hex } from "../crypto";
+import { encryptEmail, sha256Hex } from "../crypto";
 
 function mulberry32(seed: number) {
   let a = seed;
@@ -30,11 +30,11 @@ const addDays = (d: Date, n: number) => new Date(d.getTime() + n * 86400000);
 const PREFIX = ["etudiant", "etuda", "visa", "louz", "fennec", "carthage", "mira", "yass", "sami", "nour", "aziz", "henna", "sable", "jasmin", "olive", "corail"];
 const SUFFIX = ["tunis", "sfax", "sousse", "bizerte", "gabes", "kef", "msaken", "hammamet", "gafsa", "megrine", "syracuse", "padova", "torino", "bologna", "le categorie", "padova"];
 const LEVELS = ["master", "master", "master", "licence", "doctorat"] as const;
-const VISA_TYPES = [["ms", 70], ["cours_langue", 25], ["autre", 5]] as const;
-const WAIT_BASE: Record<number, { median: number; spread: number }> = {
-  2: { median: 26, spread: 20 }, // VFS
-  5: { median: 45, spread: 35 }, // Ambassade
-  11: { median: 30, spread: 25 }, // autre
+const VISA_TYPES = [["etudiant_d", 70], ["cours_langue", 25], ["autre", 5]] as const;
+const CENTER_WAIT: Record<string, { median: number; spread: number }> = {
+  vfs: { median: 26, spread: 20 },
+  embassy: { median: 45, spread: 35 },
+  other: { median: 30, spread: 25 },
 };
 const FIELD = ["ingenierie", "medecine", "econ_gestion", "litteraire_cours", "ses", "econ_gestion", "ses", "ses"] as const;
 
@@ -44,19 +44,31 @@ export async function seedDemoData(): Promise<boolean> {
   await db.execute(sql`INSERT INTO meta (key, value) VALUES ('seeded_at', now()::text) ON CONFLICT (key) DO NOTHING`);
   const marker = await db.execute(sql`SELECT value FROM meta WHERE key = 'seed_version'`);
   const rows = (marker as unknown as { rows: { value: string }[] }).rows;
-  if (rows.length > 0) return false;
-  await db.execute(sql`INSERT INTO meta (key, value) VALUES ('seed_version', '1')`);
+  const version = rows.length > 0 ? Number(rows[0].value) : 0;
+  if (version >= 2) return false;
+  if (version === 1) {
+    // Demo DB created before the canonical vocabulary/intakes were used.
+    await db.execute(sql`UPDATE applications SET visa_type = 'etudiant_d' WHERE visa_type = 'ms'`);
+    await db.execute(sql`
+      UPDATE applications SET intake = CASE right(intake, 2)
+        WHEN '03' THEN left(intake, 4) || '01'
+        WHEN '06' THEN left(intake, 4) || '05'
+        WHEN '12' THEN left(intake, 4) || '09'
+        ELSE intake
+      END
+      WHERE right(intake, 2) IN ('03', '06', '12')
+    `);
+    await db.execute(sql`UPDATE meta SET value = '2' WHERE key = 'seed_version'`);
+    return false;
+  }
+  await db.execute(sql`INSERT INTO meta (key, value) VALUES ('seed_version', '2')`);
 
-  await db.execute(sql`
-    INSERT INTO centers (country_code, name, visa_center_type, city) VALUES
-      ('IT', 'VFS Global Tunis', 'vfs', 'Tunis'),
-      ('IT', 'Ambassade d''Italie à Tunis', 'embassy', 'Tunis'),
-      ('IT', 'Autre centre', 'other', null)
-      ON CONFLICT DO NOTHING
-  `);
-
-  const centersRows = await db.execute(sql`SELECT id FROM centers ORDER BY id`);
-  const centerIds = (centersRows as unknown as { rows: { id: number }[] }).rows.map((r) => Number(r.id));
+  const centersRows = await db.execute(sql`SELECT id, visa_center_type FROM centers ORDER BY id`);
+  const centerList = (centersRows as unknown as { rows: { id: number; visa_center_type: string }[] }).rows.map((r) => ({
+    id: Number(r.id),
+    type: String(r.visa_center_type),
+  }));
+  const idForType = (type: string): number => centerList.find((c) => c.type === type)?.id ?? centerList[0]?.id ?? 1;
 
   const userCount = 640;
   const appCount = 560;
@@ -76,7 +88,7 @@ export async function seedDemoData(): Promise<boolean> {
     const email = `demo-user-${i}@seed.local`;
     userValues.push({
       emailHash: sha256Hex(email),
-      emailEnc: email,
+      emailEnc: encryptEmail(email),
       pseudo,
       pseudoLower: pseudo.toLowerCase(),
       role: "student",
@@ -92,16 +104,19 @@ export async function seedDemoData(): Promise<boolean> {
   const userIds = (userRows as unknown as { rows: { id: string }[] }).rows.map((r) => String(r.id));
 
   const appValues: (typeof applications.$inferInsert)[] = [];
+  const centerChoices: [number, number][] = [
+    [idForType("vfs"), 80],
+    [idForType("embassy"), 15],
+    [idForType("other"), 5],
+  ];
   for (let i = 0; i < appCount; i++) {
-    const [vfsId, embassyId, otherId] = centerIds.length >= 3 ? centerIds : [1, 1, 1];
-    const centerFallback = weighted<number>([[vfsId, 80], [embassyId, 15], [otherId, 5]]);
-    const centerId = centerIds.includes(centerFallback) ? centerFallback : centerIds[0];
-    const cfg = WAIT_BASE[centerId] ?? { median: 30, spread: 25 };
+    const centerId = weighted(centerChoices);
+    const centerType = centerList.find((c) => c.id === centerId)?.type ?? "other";
+    const cfg = CENTER_WAIT[centerType] ?? CENTER_WAIT.other;
     const visaType = weighted(VISA_TYPES.map(([v, w]) => [v, w] as [string, number]));
     const created = new Date(start + rand() * (end - start));
-    const monthOffset = rand() * 14; // intake shortly after creation
-    const intakeDate = new Date(created.getTime() + monthOffset * 30 * 86400000);
-    const intake = `${intakeDate.getUTCFullYear()}-${String(((Math.floor(intakeDate.getUTCMonth() / 3)) * 3 + 2) % 12 + 1).padStart(2, "0")}`;
+    const intakeYear = created.getUTCFullYear() + (rand() < 0.5 ? 0 : 1);
+    const intake = `${intakeYear}-${pick(["01", "05", "09"] as const)}`;
 
     // appointment date: clustering on weekdays, more density in spring/summer
     let appt = new Date(created.getTime() + (10 + rand() * 90) * 86400000);

@@ -10,18 +10,32 @@ const g = globalThis as unknown as { db?: AppDb; dbInitPromise?: Promise<AppDb> 
 export async function getDb(): Promise<AppDb> {
   if (g.db) return g.db;
   if (!g.dbInitPromise) {
-    g.dbInitPromise = createDb().then((db) => {
-      g.db = db;
-      return db;
-    });
+    g.dbInitPromise = createDb()
+      .then((db) => {
+        g.db = db;
+        return db;
+      })
+      .catch((error) => {
+        g.dbInitPromise = undefined;
+        throw error;
+      });
   }
   return g.dbInitPromise;
 }
 
 async function createDb(): Promise<AppDb> {
   if (process.env.DATABASE_URL) {
+    const url = process.env.DATABASE_URL;
     const postgres = (await import("postgres")).default;
-    const pg = postgres(process.env.DATABASE_URL, { prepare: false, max: 10 });
+    const forceSsl =
+      /supabase\.(co|com)/i.test(url) && !/[?&]sslmode=/i.test(url);
+    const pg = postgres(url, {
+      prepare: false,
+      max: 10,
+      connect_timeout: 10,
+      idle_timeout: 30,
+      ...(forceSsl ? { ssl: "require" as const } : {}),
+    });
     const { drizzle } = await import("drizzle-orm/postgres-js");
     return drizzle(pg, { schema });
   }

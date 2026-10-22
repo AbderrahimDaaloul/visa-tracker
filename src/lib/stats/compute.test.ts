@@ -3,6 +3,10 @@ import {
   dayDiff,
   computedStage,
   c9Survival,
+  c18ApprovedByLevel,
+  c20LifecycleTimeline,
+  c21LifecycleDaily,
+  c11CohortDaily,
   currentWaitOf,
   isoWeekOf,
   medianW,
@@ -22,6 +26,7 @@ function row(partial: Partial<BaseRow>): BaseRow {
     centerId: 1,
     visaType: "etudiant_d",
     intake: "2026-09",
+    studyLevel: null,
     docsSent: null,
     appointment: null,
     bookedOn: null,
@@ -169,14 +174,11 @@ describe("computedStage", () => {
   it("inscrit sans aucune date", () => {
     expect(computedStage(row({}))).toBe("inscrit");
   });
-  it("rendezvous avec RDV, sans docs/reponse", () => {
-    expect(computedStage(row({ appointment: "2026-01-01" }))).toBe("rendezvous");
+  it("reste inscrit avec un RDV mais sans dossier envoyé", () => {
+    expect(computedStage(row({ appointment: "2026-01-01" }))).toBe("inscrit");
   });
-  it("rendezvous si le RDV est passé, même avec docs envoyés", () => {
-    expect(computedStage(row({ docsSent: "2026-01-01", response: null, appointment: "2026-01-05" }))).toBe("rendezvous");
-  });
-  it("soumis avec docs envoyés et RDV à venir", () => {
-    expect(computedStage(row({ docsSent: "2026-01-01", response: null, appointment: "2099-01-01" }))).toBe("soumis");
+  it("soumis dès que le dossier est envoyé, même avec un RDV", () => {
+    expect(computedStage(row({ docsSent: "2026-01-01", response: null, appointment: "2026-01-05" }))).toBe("soumis");
   });
   it("reponse avec reponse", () => {
     expect(computedStage(row({ docsSent: "2026-01-01", response: "2026-02-01", outcome: "accorde" }))).toBe("reponse");
@@ -222,6 +224,89 @@ describe("c9Survival (Kaplan-Meier)", () => {
 
   it("renvoie aucune étape sans réponses", () => {
     expect(c9Survival([row({ docsSent: "2025-01-01", response: null })]).steps).toEqual([]);
+  });
+});
+
+describe("c20LifecycleTimeline", () => {
+  it("compte chaque étape par mois et par niveau", () => {
+    const rows = [
+      row({ studyLevel: "master", createdAt: "2026-06-01", docsSent: "2026-07-01", response: "2026-08-01", outcome: "accorde" }),
+      row({ studyLevel: "licence", createdAt: "2026-06-15", docsSent: "2026-07-10", response: "2026-08-05", outcome: "refuse" }),
+      row({ studyLevel: null, createdAt: "2026-06-20" }),
+    ];
+    const out = c20LifecycleTimeline(rows);
+    expect(out.months).toEqual(["2026-06", "2026-07", "2026-08"]);
+    const master = out.series.find((s) => s.level === "master")!;
+    const licence = out.series.find((s) => s.level === "licence")!;
+    expect(master.demande).toEqual([1, 0, 0]);
+    expect(master.envoi).toEqual([0, 1, 0]);
+    expect(master.reponse).toEqual([0, 0, 1]);
+    expect(licence.demande).toEqual([1, 0, 0]);
+    expect(licence.envoi).toEqual([0, 1, 0]);
+    expect(licence.reponse).toEqual([0, 0, 1]);
+  });
+});
+
+describe("c18ApprovedByLevel", () => {
+  it("ne compte que les visas accordés", () => {
+    const out = c18ApprovedByLevel([
+      row({ studyLevel: "master", outcome: "accorde" }),
+      row({ studyLevel: "master", outcome: "refuse" }),
+      row({ studyLevel: "licence", outcome: "accorde" }),
+    ]);
+    expect(out.levels).toEqual([
+      { level: "master", count: 1 },
+      { level: "licence", count: 1 },
+    ]);
+  });
+});
+
+describe("c21LifecycleDaily", () => {
+  it("ventile les trois étapes par jour et par niveau", () => {
+    const rows = [
+      row({ studyLevel: "master", createdAt: "2026-09-01", docsSent: "2026-09-10", response: "2026-09-20", outcome: "accorde" }),
+      row({ studyLevel: "licence", createdAt: "2026-09-02" }),
+    ];
+    const out = c21LifecycleDaily(rows, "2026-09");
+    expect(out.month).toBe("2026-09");
+    expect(out.days).toHaveLength(30);
+    expect(out.days[0].master.demande).toBe(1);
+    expect(out.days[9].master.envoi).toBe(1);
+    expect(out.days[19].master.reponse).toBe(1);
+    expect(out.days[1].licence.demande).toBe(1);
+    expect(out.days[0].licence.envoi).toBe(0);
+  });
+
+  it("retombe sur le mois courant si le filtre est invalide", () => {
+    const out = c21LifecycleDaily([], "nope");
+    expect(out.month).toBe(todayStr().slice(0, 7));
+  });
+});
+
+describe("c11CohortDaily", () => {
+  it("regroupe par jour d'envoi du mois choisi, ignore les autres mois et les non-envoyés", () => {
+    const rows = [
+      row({ docsSent: "2026-09-05", response: "2026-09-20", outcome: "accorde" }),
+      row({ docsSent: "2026-09-05", response: "2026-09-25", outcome: "refuse" }),
+      row({ docsSent: "2026-09-15", response: null }),
+      row({ docsSent: "2026-10-01", response: "2026-10-10", outcome: "accorde" }),
+      row({ docsSent: null }),
+    ];
+    const out = c11CohortDaily(rows, "2026-09");
+    expect(out.month).toBe("2026-09");
+    expect(out.days).toHaveLength(2);
+    expect(out.days[0]).toEqual({ date: "2026-09-05", n: 2, answeredPct: 100, approvedPct: 50, medianWait: 17.5 });
+    expect(out.days[1]).toEqual({ date: "2026-09-15", n: 1, answeredPct: 0, approvedPct: 0, medianWait: null });
+  });
+
+  it("renvoie une liste vide si aucun dossier envoyé ce mois-ci", () => {
+    const out = c11CohortDaily([row({ docsSent: "2026-08-01" })], "2026-09");
+    expect(out.days).toEqual([]);
+  });
+
+  it("retombe sur le mois courant si le filtre est invalide", () => {
+    const out = c11CohortDaily([], "nope");
+    expect(out.month).toBe(todayStr().slice(0, 7));
   });
 });
 

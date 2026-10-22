@@ -11,6 +11,7 @@ export const SCHEMA_STATEMENTS: string[] = [
     active boolean NOT NULL DEFAULT true
   )`,
   `CREATE INDEX IF NOT EXISTS centers_country_idx ON centers (country_code, active)`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS centers_name_unique ON centers (name)`,
   `CREATE TABLE IF NOT EXISTS users (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     email_hash text NOT NULL UNIQUE,
@@ -18,25 +19,22 @@ export const SCHEMA_STATEMENTS: string[] = [
     pseudo text NOT NULL,
     pseudo_lower text NOT NULL UNIQUE,
     pseudo_changed_at timestamptz,
+    password_hash text,
+    auth_provider text NOT NULL DEFAULT 'password',
+    email_verified_at timestamptz DEFAULT now(),
     role text NOT NULL DEFAULT 'student',
     trust_score integer NOT NULL DEFAULT 50,
     language text NOT NULL DEFAULT 'fr',
-    show_pseudo_in_cohorts boolean NOT NULL DEFAULT false,
+    show_pseudo_in_cohorts boolean NOT NULL DEFAULT true,
     created_at timestamptz NOT NULL DEFAULT now(),
     last_login_at timestamptz,
     banned_at timestamptz
   )`,
+  `ALTER TABLE users ADD COLUMN IF NOT EXISTS password_hash text`,
+  `ALTER TABLE users ADD COLUMN IF NOT EXISTS auth_provider text NOT NULL DEFAULT 'password'`,
+  `ALTER TABLE users ADD COLUMN IF NOT EXISTS email_verified_at timestamptz DEFAULT now()`,
+  `ALTER TABLE users ALTER COLUMN show_pseudo_in_cohorts SET DEFAULT true`,
   `CREATE INDEX IF NOT EXISTS users_role_idx ON users (role)`,
-  `CREATE TABLE IF NOT EXISTS otp_codes (
-    id serial PRIMARY KEY,
-    email_hash text NOT NULL,
-    code_hash text NOT NULL,
-    code_plain text,
-    created_at timestamptz NOT NULL DEFAULT now(),
-    expires_at timestamptz NOT NULL,
-    used_at timestamptz
-  )`,
-  `CREATE INDEX IF NOT EXISTS otp_email_idx ON otp_codes (email_hash, created_at)`,
   `CREATE TABLE IF NOT EXISTS sessions (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     token text NOT NULL UNIQUE,
@@ -98,6 +96,15 @@ export const SCHEMA_STATEMENTS: string[] = [
     reminders boolean NOT NULL DEFAULT true,
     cohort_updates boolean NOT NULL DEFAULT true
   )`,
+  `CREATE TABLE IF NOT EXISTS audit_log (
+    id serial PRIMARY KEY,
+    actor_id uuid,
+    actor_role text NOT NULL,
+    action text NOT NULL,
+    detail jsonb,
+    created_at timestamptz NOT NULL DEFAULT now()
+  )`,
+  `CREATE INDEX IF NOT EXISTS audit_log_created_idx ON audit_log (created_at DESC)`,
   `CREATE TABLE IF NOT EXISTS meta (
     key text PRIMARY KEY,
     value text,

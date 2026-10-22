@@ -36,6 +36,7 @@ export function NavBar() {
   const pathname = usePathname();
   const router = useRouter();
   const [user, setUser] = useState<UserInfo | undefined>(undefined);
+  const [mobileOpen, setMobileOpen] = useState(false);
   const dark = useSyncExternalStore(subscribeTheme, rawDark, () => false);
 
   useEffect(() => {
@@ -43,6 +44,10 @@ export function NavBar() {
       .then((r) => r.json())
       .then((d) => setUser(d.user ? { pseudo: d.user.pseudo, role: d.user.role } : null))
       .catch(() => setUser(null));
+  }, [pathname]);
+
+  useEffect(() => {
+    setMobileOpen(false);
   }, [pathname]);
 
   function toggleDark() {
@@ -63,13 +68,14 @@ export function NavBar() {
     { href: "/cohorts", label: t.nav.cohorts, auth: true },
     { href: "/settings", label: t.nav.settings, auth: true },
   ];
+  const mobileLinks = user?.role && user.role !== "student" ? [...links, { href: "/admin", label: t.nav.admin }] : links;
 
   return (
     <header className="sticky top-0 z-40 border-b border-[var(--border)] bg-[var(--surface)]/90 backdrop-blur">
       <div className="mx-auto flex max-w-6xl items-center gap-3 px-4 py-2">
         <Link href="/" className="flex items-center gap-2 font-extrabold tracking-tight">
           <span className="inline-flex h-7 w-7 items-center justify-center rounded-lg bg-[var(--primary)] text-sm text-[var(--primary-fg)]">VT</span>
-          <span className="hidden sm:inline">{t.app.name}</span>
+          <span className="hidden md:inline">{t.app.name}</span>
         </Link>
         <nav className="mx-2 hidden flex-1 items-center gap-1 md:flex">
           {links.map((l) => (
@@ -91,12 +97,33 @@ export function NavBar() {
           ) : null}
         </nav>
         <div className="ml-auto flex items-center gap-2">
-          <Button variant="ghost" size="icon" onClick={toggleDark} aria-label="Mode sombre">
-            {dark ? "☀️" : "🌙"}
+          <Button
+            variant="ghost"
+            size="icon"
+            className="md:hidden"
+            onClick={() => setMobileOpen((open) => !open)}
+            aria-label={mobileOpen ? "Fermer le menu" : "Ouvrir le menu"}
+            aria-expanded={mobileOpen}
+            aria-controls="mobile-menu"
+          >
+            <span className="flex w-5 flex-col gap-1">
+              <span className={cn("h-0.5 w-full rounded bg-current transition-transform", mobileOpen && "translate-y-1.5 rotate-45")} />
+              <span className={cn("h-0.5 w-full rounded bg-current transition-opacity", mobileOpen && "opacity-0")} />
+              <span className={cn("h-0.5 w-full rounded bg-current transition-transform", mobileOpen && "-translate-y-1.5 -rotate-45")} />
+            </span>
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="hidden md:inline-flex"
+            onClick={toggleDark}
+            aria-label={dark ? "Passer en mode clair" : "Passer en mode sombre"}
+          >
+            <ThemeIcon dark={dark} />
           </Button>
           {user === undefined ? null : user ? (
-            <div className="flex items-center gap-2">
-              <span className="hidden text-sm sm:inline" title={user.pseudo}>
+            <div className="hidden items-center gap-2 md:flex">
+              <span className="text-sm" title={user.pseudo}>
                 @{user.pseudo}
               </span>
               <Button variant="secondary" size="sm" onClick={logout}>
@@ -104,27 +131,95 @@ export function NavBar() {
               </Button>
             </div>
           ) : (
-            <Link href="/login">
-              <Button size="sm">{t.nav.login}</Button>
-            </Link>
+            <div className="hidden items-center gap-2 md:flex">
+              <Link href="/register">
+                <Button variant="secondary" size="sm">
+                  {t.nav.register}
+                </Button>
+              </Link>
+              <Link href="/login">
+                <Button size="sm">{t.nav.login}</Button>
+              </Link>
+            </div>
           )}
         </div>
       </div>
-      <nav className="flex items-center gap-1 overflow-x-auto px-3 pb-2 md:hidden">
-        {links.map((l) => (
-          <Link
-            key={l.href}
-            href={l.href}
-            className={cn(
-              "whitespace-nowrap rounded-lg px-3 py-1.5 text-sm",
-              pathname === l.href ? "font-semibold text-[var(--primary)]" : "text-foreground/80"
+      {mobileOpen ? (
+        <nav id="mobile-menu" aria-label="Navigation mobile" className="border-t border-[var(--border)] px-3 py-2 md:hidden">
+          <div className="flex flex-col gap-1">
+            {mobileLinks.map((l) => (
+              <Link
+                key={l.href}
+                href={l.href}
+                onClick={() => setMobileOpen(false)}
+                className={cn(
+                  "rounded-lg px-3 py-2 text-sm hover:bg-[var(--background)]",
+                  pathname === l.href ? "font-semibold text-[var(--primary)]" : "text-foreground/80"
+                )}
+              >
+                {l.label}
+              </Link>
+            ))}
+          </div>
+          <div className="mt-2 space-y-1 border-t border-[var(--border)] pt-2">
+            <Button variant="ghost" className="w-full justify-start" onClick={toggleDark}>
+              <ThemeIcon dark={dark} />
+              {dark ? "Mode clair" : "Mode sombre"}
+            </Button>
+            {user === undefined ? null : user ? (
+              <>
+                <p className="px-3 py-1 text-sm text-muted">@{user.pseudo}</p>
+                <Button
+                  variant="secondary"
+                  className="w-full"
+                  onClick={() => {
+                    setMobileOpen(false);
+                    void logout();
+                  }}
+                >
+                  {t.nav.logout}
+                </Button>
+              </>
+            ) : (
+              <>
+                <Link href="/login" onClick={() => setMobileOpen(false)}>
+                  <Button className="w-full">{t.nav.login}</Button>
+                </Link>
+                <Link href="/register" onClick={() => setMobileOpen(false)}>
+                  <Button variant="secondary" className="w-full">
+                    {t.nav.register}
+                  </Button>
+                </Link>
+              </>
             )}
-          >
-            {l.label}
-          </Link>
-        ))}
-      </nav>
+          </div>
+        </nav>
+      ) : null}
     </header>
+  );
+}
+
+function ThemeIcon({ dark }: { dark: boolean }) {
+  return (
+    <svg
+      className="h-4 w-4"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      {dark ? (
+        <>
+          <circle cx="12" cy="12" r="4" />
+          <path d="M12 2v2M12 20v2M4.93 4.93l1.42 1.42M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.42-1.42M17.66 6.34l1.41-1.41" />
+        </>
+      ) : (
+        <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
+      )}
+    </svg>
   );
 }
 

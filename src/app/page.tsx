@@ -10,15 +10,17 @@ export default function Home() {
         <h1 className="mt-3 text-3xl font-extrabold leading-tight sm:text-4xl">{t.home.title}</h1>
         <p className="mx-auto mt-3 max-w-xl text-muted">{t.home.subtitle}</p>
         <div className="mt-6 flex flex-col items-center justify-center gap-3 sm:flex-row">
-          <Link href="/contribute" className="btn w-full sm:w-auto">
-            <button className="h-12 w-full rounded-xl bg-[var(--primary)] px-6 font-bold text-[var(--primary-fg)] hover:bg-[var(--primary-hover)] sm:w-auto">
-              {t.home.contribute} →
-            </button>
+          <Link
+            href="/contribute"
+            className="inline-flex h-12 w-full items-center justify-center rounded-xl bg-[var(--primary)] px-6 font-bold text-[var(--primary-fg)] transition-colors hover:bg-[var(--primary-hover)] sm:w-auto"
+          >
+            {t.home.contribute} →
           </Link>
-          <Link href="/visualize" className="w-full sm:w-auto">
-            <button className="h-12 w-full rounded-xl border border-[var(--border)] bg-[var(--surface)] px-6 font-bold hover:bg-[var(--background)] sm:w-auto">
-              {t.home.visualize} →
-            </button>
+          <Link
+            href="/visualize"
+            className="inline-flex h-12 w-full items-center justify-center rounded-xl border border-[var(--border)] bg-[var(--surface)] px-6 font-bold transition-colors hover:bg-[var(--background)] sm:w-auto"
+          >
+            {t.home.visualize} →
           </Link>
         </div>
       </section>

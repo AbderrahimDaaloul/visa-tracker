@@ -6,20 +6,15 @@ import { ChartCard, type Envelope } from "@/components/chartCard";
 import { GlobalFilters, useDashboardFilters } from "@/components/filters";
 import { t } from "@/lib/i18n";
 import {
-  approvalBarsOption,
-  calendarHeatmapOption,
+  countBarsOption,
+  dailyLineOption,
   donutOption,
-  funnelOption,
   histogramOption,
-  horizBarOption,
   lineBandOption,
   lineSimpleOption,
-  medianBoxOption,
   stacked100Option,
   stackedBarOption,
-  survivalOption,
   timelineOption,
-  weeklyHeatmapOption,
 } from "@/lib/charts";
 
 type TrendMonths = { months: { month: string; mean: number | null; median: number | null; p25: number | null; p75: number | null }[] };
@@ -44,35 +39,23 @@ function LoadingSkeleton() {
 
 function DashboardBody() {
   const qs = useDashboardFilters();
-  const { data: centersQ } = useQuery<{ centers: { id: number; name: string }[] }>({
-    queryKey: ["centers"],
-    queryFn: () => fetch("/api/centers").then((r) => r.json()),
-  });
-  const centerName = (id: number): string => centersQ?.centers?.find((c) => c.id === id)?.name ?? `Centre ${id}`;
 
-  const useStat = (endKey: string, extra?: string) =>
+  const useStat = (endKey: string) =>
     useQuery<Envelope<unknown>>({
-      queryKey: [endKey, qs, extra],
-      queryFn: () => fetch(`/api/stats/${endKey}?${[qs, extra].filter(Boolean).join("&")}`).then((r) => r.json()),
+      queryKey: [endKey, qs],
+      queryFn: () => fetch(`/api/stats/${endKey}?${qs}`).then((r) => r.json()),
     });
 
   const pulse = useStat("pulse");
   const trend = useStat("wait-trend");
   const outcomes = useStat("outcomes");
   const histogram = useStat("wait-histogram");
-  const calendar = useStat("appointment-calendar");
-  const calendarBooking = useStat("appointment-calendar", "mode=reservation");
-  const funnel = useStat("funnel");
-  const slotRelease = useStat("slot-release");
-  const byCenter = useStat("by-center");
-  const survival = useStat("survival");
-  const byWait = useStat("outcome-by-wait");
-  const cohortTable = useStat("cohort-table");
   const timeline = useStat("response-timeline");
-  const apptResponse = useStat("appointment-to-response");
-  const rejection = useStat("rejection-reasons");
+  const byWait = useStat("outcome-by-wait");
   const byIntake = useStat("approval-by-intake");
-  const leadTime = useStat("lead-time");
+  const byLevel = useStat("approval-by-level");
+  const docsSent = useStat("docs-sent-timeline");
+  const lifecycle = useStat("lifecycle-timeline");
 
   const loaded = (q: { data?: Envelope<unknown> }): Envelope<unknown> | undefined => q.data;
 
@@ -85,86 +68,42 @@ function DashboardBody() {
         <ChartCard title={t.dashboard.c1} stat={loaded(trend)} render={(d) => lineBandOption((d as TrendMonths).months ?? [])} />
         <ChartCard title={t.dashboard.c2} stat={loaded(outcomes)} render={(d) => donutOption((d as { totals: never }).totals)} note="Répartition sur la période filtrée" />
         <ChartCard title={t.dashboard.c2 + " — par mois"} stat={loaded(outcomes)} render={(d) => stacked100Option((d as { byMonth: never[] }).byMonth)} />
-        <ChartCard
-          title={t.dashboard.c9}
-          stat={loaded(survival)}
-          render={(d) => survivalOption((d as { steps: never[] }).steps)}
-          note="% des dossiers encore sans réponse après N jours (dossiers en attente comptés)"
-        />
-        <ChartCard title={t.dashboard.c4Rendezvous} stat={loaded(calendar)} render={(d) => calendarHeatmapOption((d as { days: never[] }).days ?? [])} />
-        <ChartCard title={t.dashboard.c4Reservation} stat={loaded(calendarBooking)} render={(d) => calendarHeatmapOption((d as { days: never[] }).days ?? [])} />
         <ChartCard title={t.dashboard.c3} stat={loaded(histogram)} render={(d) => histogramOption((d as { hist: never[] }).hist)} />
-        <ChartCard title={t.dashboard.c12} stat={loaded(timeline)} render={(d) => timelineOption((d as { data: never[] }).data)} />
         <ChartCard
-          title={t.dashboard.c13}
-          stat={loaded(apptResponse)}
-          render={(d) => histogramOption((d as { hist: never[] }).hist)}
-          note="Du rendez-vous à la réponse"
-        />
-        <ChartCard
-          title={t.dashboard.c7}
-          stat={loaded(byCenter)}
-          render={(d) =>
-            medianBoxOption(
-              ((d as { waitByCenter: { centerId: number; median: number; p25: number; p75: number; n: number }[] }).waitByCenter ?? []).map((s) => ({
-                ...s,
-                center: centerName(s.centerId),
-              }))
-            )
-          }
-        />
-        <ChartCard
-          title={t.dashboard.c8}
-          stat={loaded(byCenter)}
-          render={(d) =>
-            approvalBarsOption(
-              ((d as { approvalByCenter: { centerId: number; approvedPct: number; n: number }[] }).approvalByCenter ?? []).map((s) => ({
-                ...s,
-                center: centerName(s.centerId),
-              }))
-            )
-          }
-        />
-        <ChartCard title={t.dashboard.c5} stat={loaded(funnel)} render={(d) => funnelOption((d as { steps: never[] }).steps)} />
-        <ChartCard
-          title={t.dashboard.c6}
-          stat={loaded(slotRelease)}
-          render={(d) => weeklyHeatmapOption((d as { heatmap: never[] }).heatmap)}
-          note="Lundi en haut → Dimanche ; basé sur la date à laquelle les créneaux ont été trouvés"
+          title={t.dashboard.c12}
+          stat={loaded(timeline)}
+          render={(d) => timelineOption((d as { data: never[] }).data)}
+          note="Nombre quotidien de réponses reçues sur les 90 derniers jours"
         />
         <ChartCard title={t.dashboard.c10} stat={loaded(byWait)} render={(d) => stackedBarOption((d as { data: never[] }).data)} />
+        <ChartCard title={t.dashboard.c15} stat={loaded(byIntake)} render={(d) => lineSimpleOption((d as { intakes: never[] }).intakes)} />
         <ChartCard
-          title={t.dashboard.c14}
-          stat={loaded(rejection)}
+          title={t.dashboard.c18}
+          stat={loaded(byLevel)}
           render={(d) =>
-            horizBarOption(
-              ((d as { reasons: { reason: string; share: number; count: number }[] }).reasons ?? []).map((r) => ({
-                ...r,
-                reason: REASON_LABELS[r.reason] ?? r.reason,
-              }))
+            countBarsOption(
+              ((d as { levels: { level: string; count: number }[] }).levels ?? []).map((l) => ({
+                label: l.level === "master" ? "Master" : l.level === "licence" ? "Licence" : "Non précisé",
+                count: l.count,
+              })),
+              "Visas accordés"
             )
           }
-          note="Visible à partir de n ≥ 10 refus"
+          note="Nombre de visas accordés selon le niveau d'études"
         />
         <ChartCard
-          title={t.dashboard.c17}
-          stat={loaded(leadTime)}
-          render={(d) => histogramOption((d as { hist: never[] }).hist)}
-          note="Délai entre réservation du créneau et rendez-vous"
+          title={t.dashboard.c19}
+          stat={loaded(docsSent)}
+          render={(d) => dailyLineOption((d as { data: never[] }).data, "Dossiers envoyés")}
+          note="Nombre de dossiers envoyés à l'ambassade par jour"
         />
-        <ChartCard title={t.dashboard.c15} stat={loaded(byIntake)} render={(d) => lineSimpleOption((d as { intakes: never[] }).intakes)} />
       </div>
-      <CohortTableStat stat={cohortTable.data} />
+      <LifecycleTableStat stat={lifecycle.data} />
+      <CohortDailyTableStat qs={qs} />
+      <LifecycleDailyTableStat qs={qs} />
     </div>
   );
 }
-
-const REASON_LABELS: Record<string, string> = {
-  documents_manquants: "Documents manquants",
-  preuve_financiere: "Preuves financières",
-  admission: "Admission",
-  non_precise: "Non précisé",
-};
 
 function PulseCards({
   data,
@@ -190,37 +129,53 @@ function PulseCards({
   );
 }
 
-function CohortTableStat({ stat }: { stat?: Envelope<unknown> }) {
+function LifecycleTableStat({ stat }: { stat?: Envelope<unknown> }) {
   if (!stat || stat.insufficientData || !stat.data) return null;
-  const weeks = (stat.data as { weeks: { week: string; n: number; answeredPct: number; approvedPct: number; medianWait: number | null }[] }).weeks.slice(-16);
+  const { months, series } = stat.data as {
+    months: string[];
+    series: { level: string; demande: number[]; envoi: number[]; reponse: number[] }[];
+  };
+  const master = series.find((s) => s.level === "master");
+  const licence = series.find((s) => s.level === "licence");
+  const cell = (arr: number[] | undefined, i: number) => arr?.[i] ?? 0;
   return (
     <div className="card mt-4 overflow-x-auto p-4">
-      <h3 className="mb-2 text-sm font-bold">{t.dashboard.c11}</h3>
-      <table className="w-full text-sm">
+      <h3 className="mb-1 text-sm font-bold">{t.dashboard.c20}</h3>
+      <p className="mb-2 text-[11px] text-muted">Demande soumise, envoi du dossier à l&apos;ambassade et réponse reçue, par mois</p>
+      <table className="w-full min-w-[640px] whitespace-nowrap text-xs sm:text-sm">
         <thead>
           <tr className="text-left text-xs text-muted">
-            <th className="py-1">Semaine d′envoi</th>
-            <th>n</th>
-            <th>Réponses reçues</th>
-            <th>Accordés</th>
-            <th>Attente médiane</th>
+            <th rowSpan={2} className="py-1 align-bottom">
+              Mois
+            </th>
+            <th colSpan={3} className="border-l border-[var(--border)] pl-3 text-center">
+              Master
+            </th>
+            <th colSpan={3} className="border-l border-[var(--border)] pl-3 text-center">
+              Licence
+            </th>
+          </tr>
+          <tr className="text-left text-xs text-muted">
+            <th className="border-l border-[var(--border)] pl-3">Demande</th>
+            <th>Envoi ambassade</th>
+            <th>Réponse</th>
+            <th className="border-l border-[var(--border)] pl-3">Demande</th>
+            <th>Envoi ambassade</th>
+            <th>Réponse</th>
           </tr>
         </thead>
         <tbody>
-          {weeks.map((w) => (
-            <tr key={w.week} className="border-t border-[var(--border)]">
-              <td className="py-1.5 font-mono text-xs">{w.week}</td>
-              <td>{w.n}</td>
-              <td>
-                <div className="flex items-center gap-2">
-                  <div className="h-1.5 w-16 overflow-hidden rounded bg-[var(--border)]">
-                    <div className="h-full bg-[var(--primary)]" style={{ width: `${w.answeredPct}%` }} />
-                  </div>
-                  <span>{w.answeredPct}%</span>
-                </div>
+          {months.map((m, i) => (
+            <tr key={m} className="border-t border-[var(--border)] odd:bg-[var(--background)]">
+              <td className="py-1.5 text-xs">
+                {m.slice(5, 7)}/{m.slice(0, 4)}
               </td>
-              <td>{w.approvedPct}%</td>
-              <td>{w.medianWait == null ? "—" : `${w.medianWait} j`}</td>
+              <td className="border-l border-[var(--border)] pl-3">{cell(master?.demande, i)}</td>
+              <td>{cell(master?.envoi, i)}</td>
+              <td>{cell(master?.reponse, i)}</td>
+              <td className="border-l border-[var(--border)] pl-3">{cell(licence?.demande, i)}</td>
+              <td>{cell(licence?.envoi, i)}</td>
+              <td>{cell(licence?.reponse, i)}</td>
             </tr>
           ))}
         </tbody>
@@ -228,3 +183,129 @@ function CohortTableStat({ stat }: { stat?: Envelope<unknown> }) {
     </div>
   );
 }
+
+function LifecycleDailyTableStat({ qs }: { qs: string | null }) {
+  const query = useQuery<Envelope<{ month: string; days: LifecycleDay[] }>>({
+    queryKey: ["lifecycle-daily", qs],
+    queryFn: () => fetch(`/api/stats/lifecycle-daily?${qs}`).then((r) => r.json()),
+    enabled: qs !== null,
+  });
+  const stat = query.data;
+  const cell = (c?: { demande: number; envoi: number; reponse: number }) => c ?? { demande: 0, envoi: 0, reponse: 0 };
+  return (
+    <div className="card mt-4 overflow-x-auto p-4">
+      <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+        <h3 className="text-sm font-bold">{t.dashboard.c20Daily}</h3>
+      </div>
+      <p className="mb-2 text-[11px] text-muted">Demande soumise, envoi du dossier à l&apos;ambassade et réponse reçue, jour par jour</p>
+      {!stat ? (
+        <p className="py-3 text-xs text-muted">Chargement…</p>
+      ) : stat.insufficientData || !stat.data ? (
+        <p className="py-3 text-xs text-muted">{t.dashboard.notEnoughHint(stat.n)}</p>
+      ) : (
+        <table className="w-full min-w-[640px] whitespace-nowrap text-xs sm:text-sm">
+          <thead>
+            <tr className="text-left text-xs text-muted">
+              <th rowSpan={2} className="py-1 align-bottom">
+                Jour
+              </th>
+              <th colSpan={3} className="border-l border-[var(--border)] pl-3 text-center">
+                Master
+              </th>
+              <th colSpan={3} className="border-l border-[var(--border)] pl-3 text-center">
+                Licence
+              </th>
+            </tr>
+            <tr className="text-left text-xs text-muted">
+              <th className="border-l border-[var(--border)] pl-3">Demande</th>
+              <th>Envoi ambassade</th>
+              <th>Réponse</th>
+              <th className="border-l border-[var(--border)] pl-3">Demande</th>
+              <th>Envoi ambassade</th>
+              <th>Réponse</th>
+            </tr>
+          </thead>
+          <tbody>
+            {stat.data.days.map((d) => {
+              const master = cell(d.master);
+              const licence = cell(d.licence);
+              return (
+                <tr key={d.date} className="border-t border-[var(--border)] odd:bg-[var(--background)]">
+                  <td className="py-1.5 text-xs">
+                    {d.date.slice(8, 10)}/{d.date.slice(5, 7)}/{d.date.slice(0, 4)}
+                  </td>
+                  <td className="border-l border-[var(--border)] pl-3">{master.demande}</td>
+                  <td>{master.envoi}</td>
+                  <td>{master.reponse}</td>
+                  <td className="border-l border-[var(--border)] pl-3">{licence.demande}</td>
+                  <td>{licence.envoi}</td>
+                  <td>{licence.reponse}</td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      )}
+    </div>
+  );
+}
+
+type LifecycleDay = {
+  date: string;
+  master: { demande: number; envoi: number; reponse: number };
+  licence: { demande: number; envoi: number; reponse: number };
+};
+
+function CohortDailyTableStat({ qs }: { qs: string | null }) {
+  const query = useQuery<Envelope<{ month: string; days: CohortDay[] }>>({
+    queryKey: ["cohort-daily", qs],
+    queryFn: () => fetch(`/api/stats/cohort-daily?${qs}`).then((r) => r.json()),
+    enabled: qs !== null,
+  });
+  const stat = query.data;
+  return (
+    <div className="card mt-4 overflow-x-auto p-4">
+      <h3 className="mb-2 text-sm font-bold">{t.dashboard.c11}</h3>
+      <p className="mb-2 text-[11px] text-muted">Suivi jour par jour des dossiers envoyés (cohorte du jour d′envoi)</p>
+      {!stat ? (
+        <p className="py-3 text-xs text-muted">Chargement…</p>
+      ) : stat.insufficientData || !stat.data ? (
+        <p className="py-3 text-xs text-muted">{t.dashboard.notEnoughHint(stat.n)}</p>
+      ) : stat.data.days.length === 0 ? (
+        <p className="py-3 text-xs text-muted">Aucun dossier envoyé ce mois-ci.</p>
+      ) : (
+        <table className="w-full min-w-[520px] whitespace-nowrap text-xs sm:text-sm">
+          <thead>
+            <tr className="text-left text-xs text-muted">
+              <th className="py-1">Jour d′envoi</th>
+              <th>n</th>
+              <th>Réponses reçues</th>
+              <th>Accordés</th>
+              <th>Attente médiane</th>
+            </tr>
+          </thead>
+          <tbody>
+            {stat.data.days.map((d) => (
+              <tr key={d.date} className="border-t border-[var(--border)] odd:bg-[var(--background)]">
+                <td className="py-1.5 text-xs">{d.date.slice(8, 10)}/{d.date.slice(5, 7)}/{d.date.slice(0, 4)}</td>
+                <td>{d.n}</td>
+                <td>
+                  <div className="flex items-center gap-2">
+                    <div className="h-1.5 w-16 overflow-hidden rounded bg-[var(--border)]">
+                      <div className="h-full bg-[var(--primary)]" style={{ width: `${d.answeredPct}%` }} />
+                    </div>
+                    <span>{d.answeredPct}%</span>
+                  </div>
+                </td>
+                <td>{d.approvedPct}%</td>
+                <td>{d.medianWait == null ? "—" : `${d.medianWait} j`}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+    </div>
+  );
+}
+
+type CohortDay = { date: string; n: number; answeredPct: number; approvedPct: number; medianWait: number | null };

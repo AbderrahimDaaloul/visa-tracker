@@ -13,6 +13,7 @@ function toBaseRow(r: typeof applications.$inferSelect): BaseRow {
     centerId: r.centerId,
     visaType: r.visaType,
     intake: r.intake,
+    studyLevel: r.studyLevel,
     docsSent: r.docsSentDate,
     appointment: r.appointmentDate,
     bookedOn: r.slotBookedOn,

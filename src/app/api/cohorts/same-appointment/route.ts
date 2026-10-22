@@ -3,7 +3,9 @@ import { requireUser } from "@/lib/auth";
 import { getOwnedApplication } from "@/lib/applications";
 import { ensureDb } from "@/lib/db/init";
 import { rowsOf } from "@/lib/db/client";
+import { MIN_SAMPLE_SIZE } from "@/lib/constants";
 import { dayDiff, medianW, todayStr } from "@/lib/stats/compute";
+import { sql } from "drizzle-orm";
 import type { NextResponse } from "next/server";
 
 export const dynamic = "force-dynamic";
@@ -59,18 +61,15 @@ export async function GET(req: Request): Promise<NextResponse> {
 
     let bounds = windowBounds(app.appointmentDate, windowParam);
     let expanded = false;
-    if (!["exact", "trois_jours"].includes(windowParam)) {
-      // handled after count check below
-    }
     const db = await ensureDb();
 
     const fetchCohort = async (from: string, to: string) => {
-      const q = await db.execute(`
+      const q = await db.execute(sql`
         SELECT u.pseudo_lower AS pseudo_lower, u.show_pseudo_in_cohorts AS show_pseudo,
                a.docs_sent_date, a.response_date, a.outcome, a.appointment_date
         FROM applications a JOIN users u ON u.id = a.user_id
-        WHERE a.status = 'actif' AND a.center_id = ${app!.centerId}
-          AND a.appointment_date >= '${from}' AND a.appointment_date <= '${to}'
+        WHERE a.status = 'actif' AND a.center_id = ${app.centerId}
+          AND a.appointment_date >= ${from}::date AND a.appointment_date <= ${to}::date
           AND u.banned_at IS NULL
       `);
       return rowsOf<{
@@ -83,22 +82,20 @@ export async function GET(req: Request): Promise<NextResponse> {
         }>(q);
     };
 
-    bounds = windowBounds(app.appointmentDate, windowParam);
     let rows = await fetchCohort(bounds.from, bounds.to);
-    if (rows.length < 5 && windowParam === "exact") {
+    if (rows.length < MIN_SAMPLE_SIZE && windowParam === "exact") {
       bounds = windowBounds(app.appointmentDate, "trois_jours");
       rows = await fetchCohort(bounds.from, bounds.to);
       expanded = true;
-      void rows;
-      if (rows.length < 5) {
-        return json({
-          window: bounds.label,
-          n: rows.length,
-          insufficientData: true,
-          expanded,
-          data: null,
-        });
-      }
+    }
+    if (rows.length < MIN_SAMPLE_SIZE) {
+      return json({
+        window: bounds.label,
+        n: rows.length,
+        insufficientData: true,
+        expanded,
+        data: null,
+      });
     }
 
     const today = todayStr();

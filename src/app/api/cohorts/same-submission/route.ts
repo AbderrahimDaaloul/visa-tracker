@@ -3,13 +3,22 @@ import { requireUser } from "@/lib/auth";
 import { getOwnedApplication } from "@/lib/applications";
 import { ensureDb } from "@/lib/db/init";
 import { rowsOf } from "@/lib/db/client";
+import { MIN_SAMPLE_SIZE } from "@/lib/constants";
 import { dayDiff, percentile, sortAsc, todayStr } from "@/lib/stats/compute";
+import { sql } from "drizzle-orm";
 import type { NextResponse } from "next/server";
 
 export const dynamic = "force-dynamic";
 
 function boundsFor(d: string, w: string): { from: string; to: string; label: string } {
   const dt = new Date(`${d}T00:00:00Z`);
+  if (w === "trois_jours") {
+    return {
+      from: new Date(dt.getTime() - 3 * 86400000).toISOString().slice(0, 10),
+      to: new Date(dt.getTime() + 3 * 86400000).toISOString().slice(0, 10),
+      label: "±3 jours",
+    };
+  }
   if (w === "semaine") {
     const day = dt.getUTCDay() || 7;
     const monday = new Date(dt);
@@ -48,36 +57,46 @@ export async function GET(req: Request): Promise<NextResponse> {
 
     let bounds = boundsFor(app.docsSentDate, windowParam);
     let expanded = false;
-    if (windowParam === "exact") {
-      const dt = new Date(`${app.docsSentDate}T00:00:00Z`);
-      bounds = {
-        from: new Date(dt.getTime() - 3 * 86400000).toISOString().slice(0, 10),
-        to: new Date(dt.getTime() + 3 * 86400000).toISOString().slice(0, 10),
-        label: "±3 jours",
-      };
-      expanded = true;
-    }
     const db = await ensureDb();
-    const q = await db.execute(`
-      SELECT u.pseudo_lower AS pseudo_lower, u.show_pseudo_in_cohorts AS show_pseudo,
-             a.response_date, a.outcome, a.docs_sent_date
-      FROM applications a JOIN users u ON u.id = a.user_id
-      WHERE a.status = 'actif' AND a.center_id = ${app.centerId}
-        AND a.docs_sent_date >= '${bounds.from}' AND a.docs_sent_date <= '${bounds.to}'
-        AND u.banned_at IS NULL
-    `);
-    const rows = rowsOf<{
-      pseudo_lower: string; show_pseudo: boolean; response_date: string | null; outcome: string; docs_sent_date: string;
-    }>(q);
+    const fetchCohort = async () => {
+      const q = await db.execute(sql`
+        SELECT u.pseudo_lower AS pseudo_lower, u.show_pseudo_in_cohorts AS show_pseudo,
+               a.response_date, a.outcome, a.docs_sent_date
+        FROM applications a JOIN users u ON u.id = a.user_id
+        WHERE a.status = 'actif' AND a.center_id = ${app.centerId}
+          AND a.docs_sent_date >= ${bounds.from}::date AND a.docs_sent_date <= ${bounds.to}::date
+          AND u.banned_at IS NULL
+      `);
+      return rowsOf<{
+        pseudo_lower: string; show_pseudo: boolean; response_date: string | null; outcome: string; docs_sent_date: string;
+      }>(q);
+    };
+    let rows = await fetchCohort();
+    if (rows.length < MIN_SAMPLE_SIZE && windowParam === "exact") {
+      bounds = boundsFor(app.docsSentDate, "trois_jours");
+      expanded = true;
+      rows = await fetchCohort();
+    }
 
     const today = todayStr();
+    if (rows.length < MIN_SAMPLE_SIZE) {
+      return json({
+        window: bounds.label,
+        n: rows.length,
+        expanded,
+        insufficientData: true,
+        updatedAt: new Date().toISOString(),
+        daysSinceSent: dayDiff(today, app.docsSentDate),
+        data: null,
+      });
+    }
     const answers = rows.filter((r) => r.response_date).map((r) => dayDiff(r.response_date!, r.docs_sent_date));
     const medianWait = answers.length ? percentile(sortAsc(answers), 0.5) : null;
     // mini timeline: responses per day since submission
     const timeline = new Map<string, number>();
     for (const r of rows) {
       if (!r.response_date) continue;
-      const d = dayDiff(r.response_date, app.docsSentDate);
+      const d = dayDiff(r.response_date, r.docs_sent_date);
       if (d >= 0) timeline.set(String(d), (timeline.get(String(d)) ?? 0) + 1);
     }
     return json({

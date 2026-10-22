@@ -55,7 +55,7 @@ export async function getSessionUser(): Promise<SessionUser | null> {
   if (rows.length === 0) return null;
   const userRows = await db.select().from(users).where(eq(users.id, rows[0].userId)).limit(1);
   const u = userRows[0];
-  if (!u || u.bannedAt) return null;
+  if (!u || u.bannedAt || !u.emailVerifiedAt) return null;
   return {
     id: u.id,
     pseudo: u.pseudo,

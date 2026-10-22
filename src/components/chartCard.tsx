@@ -7,7 +7,7 @@ import { Skeleton } from "./ui";
 import { t } from "@/lib/i18n";
 import { dateFmt } from "@/lib/formatNum";
 
-const EChart = dynamic(() => import("echarts-for-react"), { ssr: false, loading: () => <Skeleton className="h-40 w-full" /> });
+const EChart = dynamic(() => import("echarts-for-react"), { ssr: false, loading: () => <Skeleton className="h-full w-full" /> });
 
 export function ChartFrame({
   title,
@@ -21,12 +21,12 @@ export function ChartFrame({
   hint?: string;
 }) {
   return (
-    <section className="card flex flex-col p-4">
+    <section className="card flex min-w-0 flex-col p-4">
       <div className="mb-2">
         <h3 className="text-sm font-bold">{title}</h3>
         {note ? <p className="mt-0.5 text-[11px] text-muted">{note}</p> : null}
       </div>
-      <div className="min-h-40 flex-1">{children}</div>
+      <div className="h-56 min-w-0 overflow-hidden">{children}</div>
       {hint ? <p className="mt-2 text-[10px] text-muted">{hint}</p> : null}
     </section>
   );
@@ -62,7 +62,7 @@ export function ChartCard({
   if (stat.insufficientData || !stat.data) {
     return (
       <ChartFrame title={title} note={note} hint={hint}>
-        <div className="flex h-40 flex-col items-center justify-center gap-1 rounded-lg border border-dashed border-[var(--border)] p-3 text-center">
+        <div className="flex h-56 flex-col items-center justify-center gap-1 rounded-lg border border-dashed border-[var(--border)] p-3 text-center">
           <p className="text-sm font-semibold">{t.dashboard.notEnough}</p>
           <p className="text-xs text-muted">{t.dashboard.notEnoughHint(stat.n)}</p>
         </div>

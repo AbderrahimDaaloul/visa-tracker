@@ -14,29 +14,45 @@ export const PSEUDO_SCHEMA = z
 
 export const emailSchema = z.string().trim().email().max(200);
 
-export const requestOtpSchema = z.object({ email: emailSchema });
+export const PASSWORD_SCHEMA = z
+  .string()
+  .min(8, "8 caractères minimum")
+  .max(200, "200 caractères maximum")
+  .regex(/[A-Za-z]/, "Doit contenir au moins une lettre")
+  .regex(/[0-9]/, "Doit contenir au moins un chiffre");
 
-export const verifyOtpSchema = z.object({
+export const loginSchema = z.object({
   email: emailSchema,
-  code: z.string().trim().length(6),
-  pseudo: PSEUDO_SCHEMA.nullable().optional(),
+  password: z.string().min(1).max(200),
+});
+
+export const registerSchema = z.object({
+  pseudo: PSEUDO_SCHEMA,
+  email: emailSchema,
+  password: PASSWORD_SCHEMA,
+});
+
+export const forgotPasswordSchema = z.object({ email: emailSchema });
+
+export const resendVerificationSchema = z.object({ email: emailSchema });
+
+export const verifyEmailSchema = z.object({
+  token: z.string().min(20).max(600),
+});
+
+export const resetPasswordSchema = z.object({
+  token: z.string().min(20).max(600),
+  password: PASSWORD_SCHEMA,
 });
 
 export const createApplicationSchema = z.object({
-  centerId: z.number().int().positive(),
-  visaType: z.enum(VISA_TYPES_JSON as [string, ...string[]]),
-  intake: z
-    .string()
-    .trim()
-    .regex(/^(20)\d{2}-\d{2}$/),
-  studyLevel: z.enum(["licence", "master", "doctorat"]).nullable().optional(),
-  fieldOfStudy: z.string().trim().max(60).nullable().optional(),
+  studyLevel: z.enum(["licence", "master"]),
 });
 
 export const updateApplicationSchema = z.object({
   visaType: z.enum(VISA_TYPES_JSON as [string, ...string[]]).optional(),
   intake: z.string().regex(/^(20)\d{2}-\d{2}$/).optional(),
-  studyLevel: z.enum(["licence", "master", "doctorat"]).nullable().optional(),
+  studyLevel: z.enum(["licence", "master"]).nullable().optional(),
   fieldOfStudy: z.string().trim().max(60).nullable().optional(),
   appointmentDate: isoDate.nullable().optional(),
   appointmentSlot: z.enum(["matin", "apresmidi"]).nullable().optional(),
@@ -45,7 +61,7 @@ export const updateApplicationSchema = z.object({
   docsSubmissionMode: z.enum(["centre", "courier", "en_ligne"]).nullable().optional(),
   outcome: z.enum(["accorde", "refuse", "en_attente"]).optional(),
   responseDate: isoDate.nullable().optional(),
-  rejectionReason: z.enum(["documents_manquants", "preuve_financiere", "admission", "non_precise"]).nullable().optional(),
+  rejectionReason: z.string().trim().max(300, "300 caractères maximum").nullable().optional(),
 });
 
 export const flagSchema = z.object({  applicationId: z.string().uuid(),

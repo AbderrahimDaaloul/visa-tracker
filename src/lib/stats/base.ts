@@ -1,24 +1,32 @@
 import { sql, type SQL } from "drizzle-orm";
 import { ensureDb } from "@/lib/db/init";
 import { rowsOf } from "@/lib/db/client";
-import { MIN_SAMPLE_SIZE } from "../constants";
+import { FIXED_CENTER_NAME, FIXED_VISA_TYPE, MIN_SAMPLE_SIZE } from "../constants";
 
 export type Filters = {
   centerId?: number;
   visaType?: string;
   intake?: string;
+  month?: number;
+  year?: number;
   from?: string;
   to?: string;
+  fixed?: boolean;
 };
 
 export function parseFilters(sp: URLSearchParams): Filters {
   const f: Filters = {};
+  if (sp.get("fixed") === "1") f.fixed = true;
   const centerId = sp.get("centerId");
   if (centerId && centerId !== "all") f.centerId = Number(centerId) || undefined;
   const visaType = sp.get("visaType");
   if (visaType && visaType !== "all") f.visaType = visaType;
   const intake = sp.get("intake");
   if (intake && intake !== "all") f.intake = intake;
+  const month = Number(sp.get("month"));
+  if (Number.isInteger(month) && month >= 1 && month <= 12) f.month = month;
+  const year = Number(sp.get("year"));
+  if (Number.isInteger(year) && year >= 2000 && year <= 2100) f.year = year;
   const from = sp.get("from");
   if (from) f.from = from;
   const to = sp.get("to");
@@ -42,9 +50,16 @@ export function baseSql(f: Filters): SQL {
       )
     )`,
   ];
-  if (f.centerId) parts.push(sql`a.center_id = ${f.centerId}`);
-  if (f.visaType) parts.push(sql`a.visa_type = ${f.visaType}`);
+  if (f.fixed) {
+    parts.push(sql`a.center_id = (SELECT id FROM centers WHERE name = ${FIXED_CENTER_NAME} ORDER BY id LIMIT 1)`);
+    parts.push(sql`a.visa_type = ${FIXED_VISA_TYPE}`);
+  } else {
+    if (f.centerId) parts.push(sql`a.center_id = ${f.centerId}`);
+    if (f.visaType) parts.push(sql`a.visa_type = ${f.visaType}`);
+  }
   if (f.intake) parts.push(sql`a.intake = ${f.intake}`);
+  if (f.month) parts.push(sql`extract(month from coalesce(a.docs_sent_date, a.appointment_date)) = ${f.month}`);
+  if (f.year) parts.push(sql`extract(year from coalesce(a.docs_sent_date, a.appointment_date)) = ${f.year}`);
   if (f.from) parts.push(sql`coalesce(a.docs_sent_date, a.appointment_date) >= ${f.from}::date`);
   if (f.to) parts.push(sql`coalesce(a.docs_sent_date, a.appointment_date) <= ${f.to}::date`);
   return sql.join(parts, sql` AND `);
@@ -54,6 +69,7 @@ export type BaseRow = {
   centerId: number;
   visaType: string;
   intake: string;
+  studyLevel: string | null;
   docsSent: string | null;
   appointment: string | null;
   bookedOn: string | null;
@@ -70,6 +86,7 @@ export async function fetchBaseRows(f: Filters): Promise<BaseRow[]> {
     SELECT a.center_id,
            a.visa_type,
            a.intake,
+           a.study_level,
            a.docs_sent_date,
            a.appointment_date,
            a.slot_booked_on,
@@ -87,6 +104,7 @@ export async function fetchBaseRows(f: Filters): Promise<BaseRow[]> {
     centerId: Number(r.center_id),
     visaType: String(r.visa_type),
     intake: String(r.intake),
+    studyLevel: (r.study_level as string | null) ?? null,
     docsSent: (r.docs_sent_date as string | null) ?? null,
     appointment: (r.appointment_date as string | null) ?? null,
     bookedOn: (r.slot_booked_on as string | null) ?? null,

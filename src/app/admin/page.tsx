@@ -3,13 +3,14 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Button, Card, Select, Skeleton } from "@/components/ui";
+import { Alert, Button, Card, Select, Skeleton } from "@/components/ui";
 
 type AdminData = {
   stats: { users_total: number; users_banned: number; apps_active: number; apps_hidden: number; flags_open: number };
   users: { id: string; pseudo: string; role: string; trust_score: number; created_at: string; banned_at: string | null; active_apps: number }[];
   entries: { id: string; outcome: string; intake: string; visa_type: string; status: string; pseudo: string; center: string; open_flags: number }[];
   openFlags: { id: number; reason: string; created_at: string; status: string; application_id: string; reporter: string }[];
+  audit: { id: number; actor_role: string; action: string; detail: unknown; created_at: string; actor: string | null }[];
 };
 
 export default function AdminPage() {
@@ -17,6 +18,7 @@ export default function AdminPage() {
   const qc = useQueryClient();
   const [ready, setReady] = useState(false);
   const [allowed, setAllowed] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   useEffect(() => {
     fetch("/api/me")
       .then((r) => r.json())
@@ -38,7 +40,17 @@ export default function AdminPage() {
   });
 
   async function act(body: Record<string, unknown>) {
-    await fetch("/api/admin/actions", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+    setError(null);
+    const res = await fetch("/api/admin/actions", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    if (!res.ok) {
+      const payload = await res.json().catch(() => ({}));
+      setError(payload.error ?? "Action impossible.");
+      return;
+    }
     void qc.invalidateQueries({ queryKey: ["admin"] });
   }
 
@@ -47,6 +59,7 @@ export default function AdminPage() {
   return (
     <div className="space-y-4">
       <h1 className="text-xl font-extrabold">Administration</h1>
+      {error ? <Alert tone="error">{error}</Alert> : null}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
         <Stat k="Utilisateurs" v={data.stats.users_total} />
         <Stat k="Bannis" v={data.stats.users_banned} />
@@ -82,7 +95,7 @@ export default function AdminPage() {
       <Card>
         <h2 className="mb-2 text-sm font-bold">Entrées récentes</h2>
         <div className="max-h-72 overflow-auto">
-          <table className="w-full text-xs">
+          <table className="w-full min-w-[560px] whitespace-nowrap text-xs">
             <thead className="text-left text-muted">
               <tr>
                 <th className="py-1">Pseudo</th>
@@ -124,7 +137,7 @@ export default function AdminPage() {
       <Card>
         <h2 className="mb-2 text-sm font-bold">Utilisateurs</h2>
         <div className="max-h-72 overflow-auto">
-          <table className="w-full text-xs">
+          <table className="w-full min-w-[560px] whitespace-nowrap text-xs">
             <thead className="text-left text-muted">
               <tr>
                 <th className="py-1">Pseudo</th>
@@ -154,9 +167,38 @@ export default function AdminPage() {
           </table>
         </div>
       </Card>
+
+      <Card>
+        <h2 className="mb-2 text-sm font-bold">Journal d&apos;audit</h2>
+        {data.audit.length === 0 ? (
+          <p className="text-sm text-muted">Aucune action de modération pour le moment.</p>
+        ) : (
+          <ul className="max-h-72 space-y-1 overflow-auto text-xs">
+            {data.audit.map((a) => (
+              <li key={a.id} className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-[var(--border)] px-2 py-1">
+                <span>
+                  <strong>{AUDIT_LABELS[a.action] ?? a.action}</strong> par {a.actor ? `@${a.actor}` : a.actor_role}
+                  {a.detail ? <span className="ml-1 text-muted">{JSON.stringify(a.detail)}</span> : null}
+                </span>
+                <span className="text-muted">{new Date(a.created_at).toLocaleString("fr-FR")}</span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </Card>
     </div>
   );
 }
+
+const AUDIT_LABELS: Record<string, string> = {
+  hide: "Entrée masquée",
+  unhide: "Entrée restaurée",
+  delete: "Entrée supprimée",
+  ban: "Utilisateur banni",
+  unban: "Utilisateur débanni",
+  flag_confirmee: "Signalement confirmé",
+  flag_rejete: "Signalement rejeté",
+};
 
 function Stat({ k, v }: { k: string; v: number }) {
   return (

@@ -12,7 +12,13 @@ export const dynamic = "force-dynamic";
 export async function GET(): Promise<NextResponse> {
   return withApi(async () => {
     const user = await getSessionUser();
-    return json({ user });
+    if (!user) return json({ user: null, prefs: null });
+    const db = await ensureDb();
+    const prefs = await db.select().from(notificationPrefs).where(eq(notificationPrefs.userId, user.id)).limit(1);
+    return json({
+      user,
+      prefs: prefs[0] ?? { userId: user.id, reminders: true, cohortUpdates: true },
+    });
   });
 }
 
@@ -23,8 +29,6 @@ export async function PATCH(req: Request): Promise<NextResponse> {
       pseudo?: string;
       language?: string;
       showPseudoInCohorts?: boolean;
-      reminders?: boolean;
-      cohortUpdates?: boolean;
     }>(req);
     const db = await ensureDb();
     const updates: Partial<typeof users.$inferInsert> = {};
@@ -52,53 +56,11 @@ export async function PATCH(req: Request): Promise<NextResponse> {
     if (Object.keys(updates).length > 0) {
       await db.update(users).set(updates).where(eq(users.id, user.id));
     }
-    if (body.reminders !== undefined || body.cohortUpdates !== undefined) {
-      await db
-        .insert(notificationPrefs)
-        .values({ userId: user.id, reminders: body.reminders ?? true, cohortUpdates: body.cohortUpdates ?? true })
-        .onConflictDoUpdate({
-          target: notificationPrefs.userId,
-          set: {
-            ...(body.reminders !== undefined ? { reminders: body.reminders } : {}),
-            ...(body.cohortUpdates !== undefined ? { cohortUpdates: body.cohortUpdates } : {}),
-          },
-        });
-    }
     if (!rateLimit(`me-patch:${user.id}`, 30, 60000)) return apiError("Trop de requêtes.", 429);
     return json({ ok: true });
   });
 }
 
-export async function DELETE(req: Request): Promise<NextResponse> {
-  return withApi(async () => {
-    const user = await requireUser();
-    const { keepContributions } = await readJsonBody<{ keepContributions?: boolean }>(req);
-    const db = await ensureDb();
-    if (keepContributions) {
-      const anon = await db.select().from(users).where(eq(users.pseudoLower, "ancien_membre")).limit(1);
-      let anonId = anon[0]?.id;
-      if (!anonId) {
-        const created = await db
-          .insert(users)
-          .values({
-            emailHash: `anon-${crypto.randomUUID()}`,
-            emailEnc: "deleted",
-            pseudo: "ancien_membre",
-            pseudoLower: "ancien_membre",
-            pseudoChangedAt: new Date(),
-          })
-          .returning();
-        anonId = created[0].id;
-      }
-      await db.execute(`UPDATE applications SET user_id = '${anonId}' WHERE user_id = '${user.id}'`);
-      await db.execute(`UPDATE flags SET reporter_id = '${anonId}' WHERE reporter_id = '${user.id}'`);
-    } else {
-      await db.execute(`DELETE FROM applications WHERE user_id = '${user.id}'`);
-      await db.execute(`DELETE FROM flags WHERE reporter_id = '${user.id}'`);
-    }
-    await db.execute(`DELETE FROM notification_prefs WHERE user_id = '${user.id}'`);
-    await db.execute(`DELETE FROM sessions WHERE user_id = '${user.id}'`);
-    await db.execute(`DELETE FROM users WHERE id = '${user.id}'`);
-    return json({ ok: true });
-  });
+export async function DELETE(): Promise<NextResponse> {
+  return apiError("La suppression de compte est désactivée. Contactez l'administrateur.", 403);
 }

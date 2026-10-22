@@ -31,8 +31,17 @@ export async function POST(req: Request, ctx: RouteCtx): Promise<NextResponse> {
     const cardType = body.type && CARD_TYPE_MAP[body.type] ? body.type : null;
     if (!cardType) return apiError("Type d'événement invalide.");
     const fields: ContributionFields = { ...body };
-    if (cardType === "reponse" && body.outcome === undefined) {
+    if (cardType === "rendez_vous" && !body.appointmentDate) {
+      return apiError("Veuillez indiquer la date du rendez-vous.");
+    }
+    if (cardType === "envoi_dossiers" && !body.docsSentDate) {
+      return apiError("Veuillez indiquer la date d'envoi des documents.");
+    }
+    if (cardType === "reponse" && !["accorde", "refuse"].includes(body.outcome ?? "")) {
       return apiError("Veuillez indiquer le résultat (accordé/refusé).");
+    }
+    if (cardType === "reponse" && !body.responseDate) {
+      return apiError("Veuillez indiquer la date de réponse.");
     }
     if (cardType === "envoi_dossiers") {
       fields.appointmentDate = undefined;

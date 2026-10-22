@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Button, Card, Input, Label, SectionTitle } from "@/components/ui";
+import { Alert, Button, Card, Input, Label, SectionTitle } from "@/components/ui";
 import { t } from "@/lib/i18n";
 
 export default function SettingsPage() {
@@ -10,13 +10,12 @@ export default function SettingsPage() {
   const [ready, setReady] = useState(false);
   const [pseudo, setPseudo] = useState("");
   const [showPseudo, setShowPseudo] = useState(false);
-  const [reminders, setReminders] = useState(true);
-  const [cohortUpdates, setCohortUpdates] = useState(true);
   const [email, setEmail] = useState("");
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [confirmDel, setConfirmDel] = useState(false);
-  const [keep, setKeep] = useState(false);
+  const [resetBusy, setResetBusy] = useState(false);
+  const [resetSent, setResetSent] = useState(false);
+  const [resetError, setResetError] = useState<string | null>(null);
 
   useEffect(() => {
     fetch("/api/me")
@@ -38,7 +37,7 @@ export default function SettingsPage() {
     const res = await fetch("/api/me", {
       method: "PATCH",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ pseudo, showPseudoInCohorts: showPseudo, reminders, cohortUpdates }),
+      body: JSON.stringify({ pseudo, showPseudoInCohorts: showPseudo }),
     });
     const data = await res.json();
     if (!res.ok) {
@@ -49,18 +48,27 @@ export default function SettingsPage() {
     setTimeout(() => setSaved(false), 2500);
   }
 
-  async function deleteAccount() {
-    if (!confirmDel) {
-      setConfirmDel(true);
-      return;
+  async function sendPasswordReset() {
+    setResetBusy(true);
+    setResetError(null);
+    setResetSent(false);
+    try {
+      const res = await fetch("/api/auth/forgot-password", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({}),
+      });
+      const data = (await res.json()) as { error?: string };
+      if (!res.ok) {
+        setResetError(data.error ?? t.generic.error);
+        return;
+      }
+      setResetSent(true);
+    } catch {
+      setResetError(t.generic.error);
+    } finally {
+      setResetBusy(false);
     }
-    await fetch("/api/me", {
-      method: "DELETE",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ keepContributions: keep }),
-    });
-    router.push("/");
-    router.refresh();
   }
 
   if (!ready) return null;
@@ -82,32 +90,19 @@ export default function SettingsPage() {
           </div>
           <input type="checkbox" checked={showPseudo} onChange={(e) => setShowPseudo(e.target.checked)} className="h-5 w-5" />
         </div>
-        <div className="flex items-center justify-between">
-          <div>
-            <p className="text-sm font-medium">{t.settings.reminders}</p>
-            <p className="text-xs text-muted">Email (si RESEND_API_KEY configuré)</p>
-          </div>
-          <input type="checkbox" checked={reminders} onChange={(e) => setReminders(e.target.checked)} className="h-5 w-5" />
-        </div>
-        <div className="flex items-center justify-between">
-          <p className="text-sm font-medium">{t.settings.cohortUpdates}</p>
-          <input type="checkbox" checked={cohortUpdates} onChange={(e) => setCohortUpdates(e.target.checked)} className="h-5 w-5" />
-        </div>
         <Button onClick={save}>{t.contribute.submit}</Button>
       </Card>
 
-      <Card>
-        <SectionTitle>Compte</SectionTitle>
-        <p className="text-sm">
-          Email vérifié : <strong>{email || "—"}</strong>
+      <Card className="space-y-3">
+        <SectionTitle>{t.settings.password}</SectionTitle>
+        <p className="text-sm text-muted">{t.settings.passwordHint}</p>
+        <p className="text-xs text-muted">
+          Adresse : <strong>{email || "…"}</strong>
         </p>
-        <p className="mt-4 text-sm">{t.settings.deleteHint}</p>
-        <div className="mt-2 flex items-center gap-2 text-sm">
-          <input id="keep" type="checkbox" checked={keep} onChange={(e) => setKeep(e.target.checked)} />
-          <label htmlFor="keep">{t.settings.keepContributions}</label>
-        </div>
-        <Button variant="danger" className="mt-3" onClick={deleteAccount}>
-          {confirmDel ? t.generic.requiredConfirm : t.settings.deleteAccount}
+        {resetError ? <Alert tone="error">{resetError}</Alert> : null}
+        {resetSent ? <Alert tone="success">{t.settings.resetLinkSent}</Alert> : null}
+        <Button variant="secondary" onClick={sendPasswordReset} disabled={resetBusy || !email}>
+          {t.settings.sendResetLink}
         </Button>
       </Card>
     </div>

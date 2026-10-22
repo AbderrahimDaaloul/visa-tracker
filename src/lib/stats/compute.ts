@@ -357,6 +357,38 @@ export function c11CohortTable(rows: BaseRow[]): { weeks: { week: string; n: num
   return { weeks };
 }
 
+/** Daily cohort table for one calendar month (YYYY-MM), based on the day files were sent. */
+export function c11CohortDaily(
+  rows: BaseRow[],
+  viewMonth?: string | null
+): { month: string; days: { date: string; n: number; answeredPct: number; approvedPct: number; medianWait: number | null }[] } {
+  const current = todayStr().slice(0, 7);
+  const month = viewMonth && /^\d{4}-(0[1-9]|1[0-2])$/.test(viewMonth) ? viewMonth : current;
+  const byDay = new Map<string, { n: number; answered: number; approved: number; waits: number[] }>();
+  for (const r of rows) {
+    if (!r.docsSent || r.docsSent.slice(0, 7) !== month) continue;
+    const b = byDay.get(r.docsSent) ?? { n: 0, answered: 0, approved: 0, waits: [] };
+    b.n++;
+    if (r.response) {
+      b.answered++;
+      const d = dayDiff(r.response, r.docsSent);
+      if (d >= 0) b.waits.push(d);
+      if (r.outcome === "accorde") b.approved++;
+    }
+    byDay.set(r.docsSent, b);
+  }
+  const days = [...byDay.entries()]
+    .sort((a, b) => a[0].localeCompare(b[0]))
+    .map(([date, b]) => ({
+      date,
+      n: b.n,
+      answeredPct: Math.round((b.answered / Math.max(1, b.n)) * 100),
+      approvedPct: Math.round((b.approved / Math.max(1, b.n)) * 100),
+      medianWait: b.waits.length ? Math.round(percentile(sortAsc(b.waits), 0.5) * 10) / 10 : null,
+    }));
+  return { month, days };
+}
+
 export function c12ResponseTimeline(rows: BaseRow[], days = 90): { data: { date: string; count: number }[] } {
   const from = new Date(Date.now() - days * 86400000).toISOString().slice(0, 10);
   const counts = new Map<string, number>();
@@ -459,6 +491,106 @@ export function c17LeadTime(rows: BaseRow[]): { hist: HistPoint[] } {
   };
 }
 
+/* ---------- Study level & submissions ---------- */
+
+/** Approved visas grouped by study level (master vs licence). */
+export function c18ApprovedByLevel(rows: BaseRow[]): { levels: { level: string; count: number }[] } {
+  const counts = new Map<string, number>();
+  for (const r of rows) {
+    if (r.outcome !== "accorde") continue;
+    const level = r.studyLevel === "master" || r.studyLevel === "licence" ? r.studyLevel : "non_precise";
+    counts.set(level, (counts.get(level) ?? 0) + 1);
+  }
+  const levels = ["master", "licence", "non_precise"]
+    .map((level) => ({ level, count: counts.get(level) ?? 0 }))
+    .filter((l) => l.level !== "non_precise" || l.count > 0);
+  return { levels };
+}
+
+/** Daily count of dossiers sent to the embassy (docs_sent_date), zero-filled. */
+export function c19DocsSentTimeline(rows: BaseRow[]): { data: { date: string; count: number }[] } {
+  const counts = new Map<string, number>();
+  for (const r of rows) {
+    if (r.docsSent) counts.set(r.docsSent, (counts.get(r.docsSent) ?? 0) + 1);
+  }
+  const dates = [...counts.keys()].sort();
+  if (dates.length === 0) return { data: [] };
+  const today = todayStr();
+  const start = dates[0];
+  const end = dates[dates.length - 1] < today ? dates[dates.length - 1] : today;
+  if (start > end) return { data: [] };
+  const data: { date: string; count: number }[] = [];
+  let cur = new Date(`${start}T00:00:00Z`);
+  const endDate = new Date(`${end}T00:00:00Z`);
+  while (cur <= endDate) {
+    const iso = cur.toISOString().slice(0, 10);
+    data.push({ date: iso, count: counts.get(iso) ?? 0 });
+    cur = new Date(cur.getTime() + 86400000);
+  }
+  return { data };
+}
+
+/** Monthly lifecycle: applications created, files sent to the embassy, responses — split master/licence. */
+export type LifecycleSeries = {
+  level: "master" | "licence";
+  demande: number[];
+  envoi: number[];
+  reponse: number[];
+};
+
+export function c20LifecycleTimeline(rows: BaseRow[]): { months: string[]; series: LifecycleSeries[] } {
+  const events: { level: "master" | "licence"; key: "demande" | "envoi" | "reponse"; month: string }[] = [];
+  for (const r of rows) {
+    const level = r.studyLevel === "master" || r.studyLevel === "licence" ? r.studyLevel : null;
+    if (!level) continue;
+    const created = r.createdAt.slice(0, 7);
+    if (created) events.push({ level, key: "demande", month: created });
+    if (r.docsSent) events.push({ level, key: "envoi", month: r.docsSent.slice(0, 7) });
+    if (r.response) events.push({ level, key: "reponse", month: r.response.slice(0, 7) });
+  }
+  if (events.length === 0) return { months: [], series: [] };
+  const months = [...new Set(events.map((e) => e.month))].sort();
+  const forLevel = (level: "master" | "licence"): LifecycleSeries => {
+    const arr = (key: "demande" | "envoi" | "reponse") =>
+      months.map((m) => events.filter((e) => e.level === level && e.key === key && e.month === m).length);
+    return { level, demande: arr("demande"), envoi: arr("envoi"), reponse: arr("reponse") };
+  };
+  return { months, series: [forLevel("master"), forLevel("licence")] };
+}
+
+/** Daily lifecycle counters for one calendar month (YYYY-MM), split master/licence. */
+export type LifecycleDayCell = { demande: number; envoi: number; reponse: number };
+
+export function c21LifecycleDaily(
+  rows: BaseRow[],
+  viewMonth?: string | null
+): { month: string; days: { date: string; master: LifecycleDayCell; licence: LifecycleDayCell }[] } {
+  const current = todayStr().slice(0, 7);
+  const month = viewMonth && /^\d{4}-(0[1-9]|1[0-2])$/.test(viewMonth) ? viewMonth : current;
+  const [year, mon] = month.split("-").map(Number);
+  const daysInMonth = new Date(Date.UTC(year, mon, 0)).getUTCDate();
+  const empty = (): LifecycleDayCell => ({ demande: 0, envoi: 0, reponse: 0 });
+  const days = Array.from({ length: daysInMonth }, (_, i) => ({
+    date: `${month}-${String(i + 1).padStart(2, "0")}`,
+    master: empty(),
+    licence: empty(),
+  }));
+  for (const r of rows) {
+    const level: "master" | "licence" | null =
+      r.studyLevel === "master" ? "master" : r.studyLevel === "licence" ? "licence" : null;
+    if (!level) continue;
+    const push = (date: string | null, key: keyof LifecycleDayCell) => {
+      if (!date || date.slice(0, 7) !== month) return;
+      const i = Number(date.slice(8, 10)) - 1;
+      if (i >= 0 && i < daysInMonth) days[i][level][key]++;
+    };
+    push(r.createdAt.slice(0, 10), "demande");
+    push(r.docsSent, "envoi");
+    push(r.response, "reponse");
+  }
+  return { month, days };
+}
+
 /* ---------- Benchmark helpers ---------- */
 
 export function computeBenchmark(myWait: { days: number; basis: "documents" | "rendezvous" } | null, rows: BaseRow[]) {
@@ -483,10 +615,8 @@ export function computeBenchmark(myWait: { days: number; basis: "documents" | "r
 
 /* ---------- Stage helpers ---------- */
 
-export function computedStage(r: BaseRow): "inscrit" | "soumis" | "rendezvous" | "reponse" {
-  const today = todayStr();
+export function computedStage(r: BaseRow): "inscrit" | "soumis" | "reponse" {
   if (r.response) return "reponse";
-  if (r.appointment && r.appointment <= today) return "rendezvous";
   if (r.docsSent) return "soumis";
   return "inscrit";
 }

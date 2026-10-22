@@ -1,13 +1,14 @@
 # VisaTrack TN
 
-Plateforme communautaire et **agnostique d'ambassade** (non affiliée à VFS Global ou à l'Ambassade d'Italie) qui permet aux étudiant·e·s tunisien·ne·s applicant à des études en **Italie** de partager, de façon anonyme, leurs délais réels de visa : rendez-vous VFS, dépôt de dossier, réponse du consulat.
+Plateforme communautaire (non affiliée à VFS Global ou à l'Ambassade d'Italie) qui permet aux étudiant·e·s tunisien·ne·s applicant à des études en **Italie** de partager, de façon anonyme, leurs délais réels de visa. Le parcours est centré sur **Almaviva Tunisie** et le **visa étudiant D (long séjour)**.
 
 - Contribuer en 2 minutes (3 cartes : RDV / dossier / réponse) — **aucun document à téléverser**
+- Onboarding simplifié : centre et type de visa fixes, seul le **niveau d'études** est demandé (**Licence** ou **Master**)
 - Tableau communautaire : **17 graphiques** (délais, taux d'accord, calendrier des créneaux, survie Kaplan-Meier, funnel, cohortes…)
 - Mon parcours (P1–P8) : étape actuelle, « Suis-je en retard ? », compte à rebours, position dans l'attente, fenêtre P25–P90
 - Mes cohortes : étudiants avec le même RDV / la même date d'envoi (exact, ±3 j, semaine, mois)
 - Modération : signalements, masquage automatique à ≥ 3 flags ouverts, bannissement, audit console
-- Auth sans mot de passe : code OTP à 6 chiffres (15 min), pseudonyme, emails chiffrés (AES-GCM) + hachés (SHA-256)
+- Auth email + mot de passe, Google OAuth optionnel, réinitialisation par lien email, pseudonyme, emails chiffrés (AES-GCM) + hachés (SHA-256)
 
 ---
 
@@ -35,13 +36,13 @@ npm install
 npm run dev          # http://localhost:3000
 ```
 
-Au **premier appel API**, le schéma est créé automatiquement puis **560 candidatures de démonstration (640 comptes)** sont insérées (source aléatoire déterministe). Pour désactiver le seed : `SEED_DEMO=0`.
+Au **premier appel API**, le schéma et les **3 centres de référence** sont créés automatiquement. La base reste vide de toute candidature. Pour charger les données de démonstration (560 candidatures / 640 comptes) : `SEED_DEMO=1` — jamais en production.
 
 `.env.local` recommandé sous Windows :
 
 ```ini
 PGLITE_DATA_DIR=C:\Users\<vous>\AppData\Local\visatrack-tn\pglite
-SEED_DEMO=1
+SEED_DEMO=0
 ```
 
 Commandes :
@@ -50,6 +51,7 @@ Commandes :
 npm run dev          # développement
 npm run build        # build production (typecheck inclus)
 npm start            # serveur production
+npm run db:init      # crée le schéma + les centres de référence (idempotent)
 npm test             # vitest (helpers statistiques)
 npm run lint         # eslint
 ```
@@ -58,26 +60,47 @@ npm run lint         # eslint
 
 ## Connexion (démo / dev)
 
-1. `/login` → saisir un email → **code OTP affiché** dans l'alerte (mode dev, `devCode` ; en prod : Resend via `RESEND_API_KEY`).
-2. Premier login : choisir un **pseudo** (3–20 alphanumériques + `_`).
-3. Comptes de test en dev uniquement :
+1. `/login` → email + mot de passe.
+2. `/register` → pseudo (3–20 alphanumériques + `_`), email, mot de passe, **ou** « Continuer avec Google » si `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` sont configurés.
+3. Mot de passe oublié : `/forgot-password` envoie un lien valable 30 minutes. Sans fournisseur email en dev, le lien s'affiche directement dans l'alerte.
+4. Comptes de test en dev uniquement (à créer via `/register` avec ces emails) :
    - `admin@visatrack.local` → rôle **admin**
    - `moderator@visatrack.local` → rôle **moderator**
-4. Limites locales : 5 OTP/email/heure, 30 OTP/IP/heure.
+5. Limites locales : 10 tentatives de connexion/email/15 min, 5 demandes de réinitialisation/email/heure.
 
 ---
 
 ## Basculer vers Supabase (production)
 
+VisaTrack utilise **uniquement la chaîne de connexion Postgres** de Supabase : ni la clé `anon`, ni la clé `service_role`, ni Supabase Auth ne sont nécessaires.
+
+1. Créer un projet Supabase (région Europe de préférence).
+2. **Project Settings → Database → Connection string** : copier l'URI du **Session pooler** (port `5432`) ou du **Transaction pooler** (port `6543`), remplacer le mot de passe, garder `?sslmode=require`.
+3. Générer une clé stable : `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"`.
+4. Renseigner `.env.local` :
+
 ```ini
-DATABASE_URL=postgresql://postgres:<mot-de-passe>@<projet>.supabase.co:5432/postgres
+DATABASE_URL=postgresql://postgres.<projet>:<mot-de-passe>@<host>:6543/postgres?sslmode=require
 SEED_DEMO=0
 RESEND_API_KEY=re_...
+EMAIL_FROM="VisaTrack TN <no-reply@votre-domaine.tn>"
+EMAIL_CRYPT_KEY=<chaîne aléatoire longue et stable>
+ADMIN_EMAILS=vous@votre-domaine.tn
+# Optionnel : connexion Google
+GOOGLE_CLIENT_ID=
+GOOGLE_CLIENT_SECRET=
+NEXT_PUBLIC_APP_URL=https://votre-domaine.tn
 ```
 
-- Le même schéma s'applique (`ensureSchema`, `CREATE TABLE IF NOT EXISTS`) — compatible PGLite *et* Postgres.
+5. Initialiser : `npm run db:init` (crée les tables + les 3 centres, sans aucune candidature).
+6. Démarrer : `npm run build` puis `npm start`, vérifier `GET /api/health`, puis se connecter avec une adresse de `ADMIN_EMAILS` (utilisez « Mot de passe oublié » pour définir le premier mot de passe).
+
+- Le même schéma s'applique (`ensureSchema`, `CREATE TABLE IF NOT EXISTS`) — compatible PGLite *et* Postgres. Les 3 centres de référence sont créés automatiquement ; aucune donnée de démonstration n'est insérée.
 - `serverExternalPackages: ["@electric-sql/pglite", "postgres"]` déjà configuré dans `next.config.ts`.
-- Les emails sont stockés **hachés** (`email_hash`, unicité) + **chiffrés** (`email_enc`) : définissez `ENCRYPTION_KEY` (32 octets hex) pour déchiffrer en production.
+- `ADMIN_EMAILS` : ces adresses deviennent **admin** à leur première connexion (séparées par des virgules). Indispensable en production, car le compte de test `admin@visatrack.local` est réservé au mode dev.
+- `RESEND_API_KEY` (ou SMTP) est **nécessaire en production** pour les liens de réinitialisation de mot de passe. Sans fournisseur, aucun lien n'est envoyé.
+- Les emails sont stockés **hachés** (`email_hash`, unicité) + **chiffrés** (`email_enc`, AES-256-GCM avec IV aléatoire) : définissez une `EMAIL_CRYPT_KEY` longue et stable en production (la changer rend les emails existants illisibles).
+- Vérification après déploiement : `GET /api/health` (base, compteurs, email/admin configurés).
 
 ---
 
@@ -87,9 +110,9 @@ RESEND_API_KEY=re_...
 src/
 ├── app/
 │   ├── page.tsx                    # accueil
-│   ├── login/ contribute/ visualize/ journey/ cohorts/ settings/ admin/
+│   ├── login/ register/ forgot-password/ reset-password/ contribute/ visualize/ journey/ cohorts/ settings/ admin/
 │   └── api/
-│       ├── auth/                   # request-otp, verify-otp, logout
+│       ├── auth/                   # login, register, forgot/reset-password, google, logout
 │       ├── me/ applications/       # profil, candidatures, benchmark, events, flags
 │       ├── stats/                  # 16 endpoints (pulse, wait-trend, …, lead-time)
 │       ├── cohorts/ centers/ flags/
@@ -98,7 +121,7 @@ src/
 ├── lib/
 │   ├── db/                         # client (driver-agnostic), schema, ddl, init, seed
 │   ├── stats/                      # base (filtres SQL, k=5), compute (17 graphiques purs), run
-│   ├── auth.ts crypto.ts email.ts api.ts validation.ts contribution.ts constants.ts i18n.ts
+│   ├── auth.ts accounts.ts crypto.ts email.ts googleOAuth.ts api.ts validation.ts contribution.ts constants.ts i18n.ts
 │   └── charts.ts                   # options ECharts
 └── …
 ```
@@ -115,10 +138,13 @@ src/
 
 ## Tests
 
-`src/lib/stats/compute.test.ts` couvre les briques pures : `percentile`, `medianW`, `tukeyTrim`, `isoWeekOf`, `dayDiff`, `waitOf`/`currentWaitOf`, `computedStage`, `c9Survival` (Kaplan-Meier), `envelope` (k=5).
+`src/lib/stats/compute.test.ts` couvre les briques pures : `percentile`, `medianW`, `tukeyTrim`, `isoWeekOf`, `dayDiff`, `waitOf`/`currentWaitOf`, `computedStage`, `c9Survival` (Kaplan-Meier), `envelope` (k=5).  
+`src/lib/contribution.test.ts` couvre les règles métier de saisie (dates cohérentes, résultat/refus, avertissements).  
+`src/lib/crypto.test.ts` couvre le chiffrement des emails et les helpers de mot de passe (aller-retour, IV aléatoire, normalisation, scrypt).  
+`src/lib/adminEmails.test.ts` couvre le bootstrap admin via `ADMIN_EMAILS`.
 
 ```bash
-npm test   # 34 tests
+npm test   # suite complète
 ```
 
 ---
@@ -126,3 +152,4 @@ npm test   # 34 tests
 ## Journal de session
 
 Voir `SESSION-LOG.md` (historique des corrections : bugs SQL, seed, Tailwind, encodages, smoke tests).
+"# visa-tracker" 

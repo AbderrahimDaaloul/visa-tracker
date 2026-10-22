@@ -7,7 +7,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "test": "vitest run"
+    "test": "vitest run",
+    "db:init": "tsx scripts/db-init.ts"
   },
   "dependencies": {
     "@electric-sql/pglite": "^0.5.10",
@@ -21,6 +22,7 @@
     "lucide-react": "^1.60.0",
     "nanoid": "^6.0.2",
     "next": "16.4.2",
+    "nodemailer": "^10.1.7",
     "postgres": "^3.4.9",
     "react": "19.3.0",
     "react-dom": "19.3.0",
@@ -32,6 +34,7 @@
     "@tailwindcss/postcss": "^4.3.3",
     "@tailwindcss/turbopack": "^4",
     "@types/node": "^24.19.2",
+    "@types/nodemailer": "^8.0.2",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "drizzle-kit": "^0.31.11",

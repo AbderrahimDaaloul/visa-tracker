@@ -1,114 +1,124 @@
 "use client";
 
-import { useState } from "react";
-import { useRouter } from "next/navigation";
-import { Button, Card, Input, Label, Alert } from "@/components/ui";
+import { Suspense, useState, type FormEvent } from "react";
+import Link from "next/link";
+import { useRouter, useSearchParams } from "next/navigation";
+import { AuthShell, GoogleButton } from "@/components/auth";
+import { Alert, Button, Input, Label, Skeleton } from "@/components/ui";
 import { t } from "@/lib/i18n";
 
-export default function LoginPage() {
+function LoginForm() {
   const router = useRouter();
-  const [step, setStep] = useState<"email" | "code" | "pseudo">("email");
+  const params = useSearchParams();
   const [email, setEmail] = useState("");
-  const [code, setCode] = useState("");
-  const [pseudo, setPseudo] = useState("");
-  const [devCode, setDevCode] = useState<string | null>(null);
+  const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [verifyEmail, setVerifyEmail] = useState<string | null>(null);
 
-  async function requestOtp() {
+  const queryError = params.get("error");
+  const knownErrors = t.auth.errors as Record<string, string>;
+  const message = error ?? (queryError ? knownErrors[queryError] ?? t.generic.error : null);
+  const resetDone = params.get("reset") === "1";
+
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
     setBusy(true);
     setError(null);
-    const res = await fetch("/api/auth/request-otp", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ email }),
-    });
-    const data = await res.json();
-    setBusy(false);
-    if (!res.ok) {
-      setError(data.error ?? "Erreur");
-      return;
+    try {
+      const res = await fetch("/api/auth/login", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ email, password }),
+      });
+      const data = (await res.json()) as { error?: string; code?: string };
+      if (!res.ok) {
+        setError(data.error ?? t.generic.error);
+        setVerifyEmail(data.code === "email_not_verified" ? email.trim() : null);
+        return;
+      }
+      setVerifyEmail(null);
+      router.push("/journey");
+      router.refresh();
+    } catch {
+      setError(t.generic.error);
+    } finally {
+      setBusy(false);
     }
-    setDevCode(data.devCode ?? null);
-    setStep("code");
-  }
-
-  async function verify() {
-    setBusy(true);
-    setError(null);
-    const res = await fetch("/api/auth/verify-otp", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ email, code, pseudo: step === "pseudo" ? pseudo : undefined }),
-    });
-    const data = await res.json();
-    setBusy(false);
-    if (!res.ok) {
-      setError(data.error ?? "Erreur");
-      return;
-    }
-    if (data.needsPseudo) {
-      setStep("pseudo");
-      return;
-    }
-    router.push("/journey");
-    router.refresh();
   }
 
   return (
-    <div className="mx-auto max-w-sm py-10">
-      <Card className="space-y-4">
+    <AuthShell title={t.auth.loginTitle} subtitle={t.auth.loginSubtitle}>
+      {resetDone ? <Alert tone="success">{t.auth.resetDone}</Alert> : null}
+      {message ? <Alert tone="error">{message}</Alert> : null}
+      {verifyEmail ? (
+        <p className="text-center text-xs">
+          <Link
+            href={`/verify-email?email=${encodeURIComponent(verifyEmail)}`}
+            className="font-semibold text-[var(--primary)] hover:underline"
+          >
+            {t.auth.verifyEmailAction}
+          </Link>
+        </p>
+      ) : null}
+      <form className="space-y-3" onSubmit={submit}>
         <div>
-          <h1 className="text-xl font-extrabold">{t.auth.title}</h1>
-          <p className="mt-1 text-xs text-muted">{t.auth.pseudonymous}</p>
+          <Label htmlFor="email">{t.auth.emailLabel}</Label>
+          <Input
+            id="email"
+            type="email"
+            autoComplete="email"
+            placeholder={t.auth.emailPlaceholder}
+            value={email}
+            onChange={(e) => {
+              setEmail(e.target.value);
+              setVerifyEmail(null);
+            }}
+            required
+          />
         </div>
-        {error ? <Alert tone="error">{error}</Alert> : null}
-        {step === "email" && (
-          <div className="space-y-3">
-            <Label htmlFor="email">{t.auth.emailLabel}</Label>
-            <Input id="email" type="email" placeholder={t.auth.emailPlaceholder} value={email} onChange={(e) => setEmail(e.target.value)} />
-            <Button className="w-full" disabled={busy || !email} onClick={requestOtp}>
-              {t.auth.sendCode}
-            </Button>
-          </div>
-        )}
-        {step === "code" && (
-          <div className="space-y-3">
-            {devCode ? (
-              <Alert tone="warn">
-                Mode développement : pas de clé RESEND_API_KEY configurée. Votre code est <strong className="font-mono">{devCode}</strong> (aussi visible dans la console du serveur).
-              </Alert>
-            ) : (
-              <Alert tone="success">Un code à 6 chiffres a été envoyé à {email}. Il expire dans 15 minutes.</Alert>
-            )}
-            <Label htmlFor="code">{t.auth.codeLabel}</Label>
-            <Input
-              id="code"
-              inputMode="numeric"
-              maxLength={6}
-              className="font-mono text-xl tracking-[0.5em]"
-              value={code}
-              onChange={(e) => setCode(e.target.value.replace(/\D/g, ""))}
-            />
-            <Button className="w-full" disabled={busy || code.length !== 6} onClick={verify}>
-              {t.auth.verify}
-            </Button>
-            <Button variant="secondary" size="sm" className="w-full" onClick={requestOtp}>
-              {t.auth.resend}
-            </Button>
-          </div>
-        )}
-        {step === "pseudo" && (
-          <div className="space-y-3">
-            <p className="text-sm">{t.auth.noAccount}</p>
-            <Label htmlFor="pseudo">{t.auth.pseudoLabel}</Label>
-            <Input id="pseudo" placeholder={t.auth.pseudoPlaceholder} value={pseudo} onChange={(e) => setPseudo(e.target.value)} />
-            <Button className="w-full" disabled={busy || pseudo.length < 3} onClick={verify}>
-              {t.auth.verify}
-            </Button>
-          </div>
-        )}
-      </Card>
-    </div>
+        <div>
+          <Label htmlFor="password">{t.auth.passwordLabel}</Label>
+          <Input
+            id="password"
+            type="password"
+            autoComplete="current-password"
+            placeholder={t.auth.passwordPlaceholder}
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            required
+          />
+        </div>
+        <Button type="submit" className="w-full" disabled={busy || !email || !password}>
+          {t.auth.login}
+        </Button>
+      </form>
+      <GoogleButton label={t.auth.google} dividerLabel={t.auth.or} />
+      <div className="flex flex-col gap-2 text-center text-xs">
+        <Link href="/forgot-password" className="text-[var(--primary)] hover:underline">
+          {t.auth.forgot}
+        </Link>
+        <span className="text-muted">
+          {t.auth.noAccount}{" "}
+          <Link href="/register" className="font-semibold text-[var(--primary)] hover:underline">
+            {t.auth.createAccount}
+          </Link>
+        </span>
+      </div>
+    </AuthShell>
+  );
+}
+
+export default function LoginPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="mx-auto max-w-sm py-10">
+          <Skeleton className="h-72 w-full" />
+        </div>
+      }
+    >
+      <LoginForm />
+    </Suspense>
   );
 }

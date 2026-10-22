@@ -6,7 +6,6 @@ import { useRouter } from "next/navigation";
 import { Badge, Button, Card, Skeleton, cn } from "@/components/ui";
 import { t } from "@/lib/i18n";
 import { dateFmt } from "@/lib/formatNum";
-import { gaugeOption } from "@/lib/charts";
 import { EChartBox } from "@/components/echartBox";
 
 type MyApp = {
@@ -20,7 +19,8 @@ type MyApp = {
   docsSentDate: string | null;
   outcome: string;
   responseDate: string | null;
-  stage: "inscrit" | "soumis" | "rendezvous" | "reponse";
+  stage: "inscrit" | "soumis" | "reponse";
+  createdAt: string;
   currentWait: { days: number; basis: string } | null;
   appointmentCountdownDays: number | null;
 };
@@ -37,11 +37,10 @@ type Bench = {
   insufficient: boolean;
 };
 
-const STAGES: { key: MyApp["stage"]; label: string }[] = [
-  { key: "inscrit", label: t.journey.stage.inscrit },
-  { key: "soumis", label: t.journey.stage.soumis },
-  { key: "rendezvous", label: t.journey.stage.rendezvous },
-  { key: "reponse", label: t.journey.stage.reponse },
+const STAGES: { key: MyApp["stage"]; label: string; date: (app: MyApp) => string | null }[] = [
+  { key: "inscrit", label: t.journey.stage.inscrit, date: (app) => app.createdAt },
+  { key: "soumis", label: t.journey.stage.soumis, date: (app) => app.docsSentDate },
+  { key: "reponse", label: t.journey.stage.reponse, date: (app) => app.responseDate },
 ];
 
 export default function JourneyPage() {
@@ -92,9 +91,7 @@ export default function JourneyPage() {
       <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
         <AmILate app={app} />
         <Countdown app={app} />
-        <WindowCard app={app} />
         <PositionCard app={app} />
-        <CohortSnapshot app={app} />
         <SummaryCard app={app} />
       </div>
     </div>
@@ -106,13 +103,21 @@ function StepTracker({ app }: { app: MyApp }) {
   return (
     <Card>
       <h2 className="mb-4 text-sm font-bold">{t.journey.stepTracker}</h2>
-      <ol className="flex items-center gap-1">
+      <ol className="relative flex items-stretch gap-1">
         {STAGES.map((s, i) => (
-          <li key={s.key} className="flex flex-1 items-center">
-            <div className={cn("flex items-center gap-2 rounded-lg px-2 py-1", i === activeIdx && cn("bg-[var(--background)] font-bold", "text-[var(--primary)]"))}>
+          <li key={s.key} className="relative flex flex-1 flex-col items-center">
+            {i < STAGES.length - 1 ? (
+              <div
+                className={cn(
+                  "absolute left-1/2 top-4 h-0.5 w-full",
+                  i < activeIdx ? "bg-[var(--success)]" : "bg-[var(--border)]"
+                )}
+              />
+            ) : null}
+            <div className={cn("relative flex flex-col items-center gap-1 rounded-lg px-2 py-1 text-center", i === activeIdx && cn("bg-[var(--background)] font-bold", "text-[var(--primary)]"))}>
               <span
                 className={cn(
-                  "inline-flex h-6 w-6 items-center justify-center rounded-full border text-xs font-bold",
+                  "inline-flex h-6 w-6 items-center justify-center rounded-full border bg-[var(--surface)] text-xs font-bold",
                   i < activeIdx
                     ? "border-[var(--success)] bg-[var(--success)] text-white"
                     : i === activeIdx
@@ -122,17 +127,14 @@ function StepTracker({ app }: { app: MyApp }) {
               >
                 {i < activeIdx ? "✓" : i + 1}
               </span>
-              <span className="hidden text-xs sm:inline">{s.label}</span>
+              <span className="hidden flex-col text-xs sm:flex">
+                <span>{s.label}</span>
+                <span className="text-[10px] font-normal text-muted">{dateFmt(s.date(app))}</span>
+              </span>
             </div>
-            {i < STAGES.length - 1 ? <div className={cn("h-0.5 flex-1", i < activeIdx ? "bg-[var(--success)]" : "bg-[var(--border)]")} /> : null}
           </li>
         ))}
       </ol>
-      <div className="mt-2 grid grid-cols-3 gap-2 text-xs text-muted">
-        <span>Dossier : {dateFmt(app.docsSentDate)}</span>
-        <span>RDV : {dateFmt(app.appointmentDate)}</span>
-        <span>Réponse : {dateFmt(app.responseDate)}</span>
-      </div>
     </Card>
   );
 }
@@ -152,22 +154,64 @@ function AmILate({ app }: { app: MyApp }) {
     );
   }
   const zone = bench.myWaitDays <= bench.median ? "success" : bench.myWaitDays <= (bench.p75 ?? Infinity) ? "warn" : "error";
-  const zoneLabel = zone === "success" ? t.journey.gauge.mid : zone === "warn" ? t.journey.gauge.mid : t.journey.gauge.late;
+  const zoneLabel = zone === "success" ? t.journey.gauge.early : zone === "warn" ? t.journey.gauge.mid : t.journey.gauge.late;
+  const zoneTone = zone === "error" ? "danger" : zone === "success" ? "success" : "primary";
+  const scale = Math.max(1, bench.p75 ?? bench.median, bench.myWaitDays);
+  const pct = (v: number) => Math.min(100, Math.max(0, (v / scale) * 100));
+  const faster = bench.longerPct != null && bench.longerPct >= 50;
   return (
-    <Card>
-      <h2 className="text-sm font-bold">{t.journey.amILate}</h2>
-      <div className="mt-1 h-44">
-        <EChartBox option={gaugeOption({ days: bench.myWaitDays, median: bench.median, p25: bench.p25 ?? 0, p75: bench.p75 ?? bench.median })} />
+    <Card className="flex flex-col">
+      <div className="flex items-start justify-between gap-3">
+        <h2 className="text-sm font-bold">{t.journey.amILate}</h2>
+        <Badge color={zoneTone}>{zoneLabel}</Badge>
       </div>
-      <div className="mt-2 space-y-1 text-sm">
-        <p>{t.journey.gauge.you(bench.myWaitDays)}</p>
-        <p className="text-muted">{t.journey.gauge.median(bench.median)}</p>
-        {bench.longerPct != null ? <p className="text-xs text-muted">{t.journey.gauge.longer(bench.longerPct)}</p> : null}
-        <p className={cn("font-semibold", zone === "error" ? "text-[var(--danger)]" : zone === "success" ? "text-[var(--success)]" : "text-[#d97706]")}>{zoneLabel}</p>
-        <p className="text-[10px] text-muted">
-          n = {bench.n} · estimation communautaire, pas une promesse
+
+      <div className="mt-4 flex items-baseline gap-2">
+        <span className="font-mono text-4xl font-extrabold tracking-tight text-[var(--primary)]">
+          {t.journey.gauge.daysUnit(bench.myWaitDays)}
+        </span>
+        <span className="text-xs text-muted">{t.journey.gauge.waitingSince}</span>
+      </div>
+
+      <div className="mt-5">
+        <div className="relative h-2.5 rounded-full bg-[var(--border)]">
+          <div
+            className="absolute inset-y-0 rounded-full bg-[var(--success)]/25"
+            style={{ width: `${pct(bench.median)}%` }}
+          />
+          <div
+            className="absolute -top-1 h-4.5 w-0.5 rounded bg-[var(--success)]"
+            style={{ left: `${pct(bench.median)}%` }}
+            title={t.journey.gauge.medianLabel}
+          />
+          <div
+            className={cn(
+              "absolute -top-1 h-4.5 w-1 rounded",
+              zone === "error" ? "bg-[var(--danger)]" : zone === "success" ? "bg-[var(--success)]" : "bg-[#d97706]"
+            )}
+            style={{ left: `${pct(bench.myWaitDays)}%` }}
+            title={t.journey.gauge.youMarker}
+          />
+        </div>
+        <div className="mt-2 flex items-center justify-between text-xs text-muted">
+          <span>{t.journey.gauge.youMarker}</span>
+          <span>
+            {t.journey.gauge.medianLabel} · {t.journey.gauge.daysUnit(bench.median)}
+          </span>
+        </div>
+      </div>
+
+      {bench.longerPct != null ? (
+        <p className="mt-4 text-sm">
+          {faster
+            ? t.journey.gauge.faster(bench.longerPct)
+            : t.journey.gauge.slower(100 - bench.longerPct)}
         </p>
-      </div>
+      ) : null}
+
+      <p className="mt-auto border-t border-[var(--border)] pt-2 text-[10px] text-muted">
+        {t.journey.gauge.note(bench.n)}
+      </p>
     </Card>
   );
 }
@@ -188,52 +232,14 @@ function Countdown({ app }: { app: MyApp }) {
   const m = Math.floor((abs % 3600000) / 60000);
   const s = Math.floor((abs % 60000) / 1000);
   return (
-    <Card>
+    <Card className="flex flex-col">
       <h2 className="text-sm font-bold">{past ? `${t.journey.daysSince} rendez-vous` : t.journey.countdown}</h2>
-      <p className="mt-4 text-center font-mono text-3xl font-extrabold tracking-tight text-[var(--primary)]">
-        {d}j {h}h {m}min {s}s
-      </p>
-      <p className="mt-2 text-center text-xs text-muted">Rendez-vous : {dateFmt(app.appointmentDate)}</p>
-    </Card>
-  );
-}
-
-function WindowCard({ app }: { app: MyApp }) {
-  const { data: bench } = useQuery<Bench>({
-    queryKey: ["benchmark", app.id],
-    queryFn: () => fetch(`/api/me/benchmark?applicationId=${app.id}`).then((r) => r.json()),
-  });
-  const base = app.docsSentDate ?? app.appointmentDate;
-  if (!base) return null;
-  if (!bench || bench.insufficient || bench.p25 == null || bench.p90 == null) {
-    return (
-      <Card>
-        <h2 className="text-sm font-bold">{t.journey.window}</h2>
-        <p className="mt-3 text-sm text-muted">{t.dashboard.notEnoughHint(bench?.n ?? 0)}</p>
-      </Card>
-    );
-  }
-  const add = (days: number) => dateFmt(new Date(Date.parse(`${base}T00:00:00Z`) + days * 86400000));
-  return (
-    <Card>
-      <h2 className="text-sm font-bold">{t.journey.window}</h2>
-      <div className="relative mt-6 h-10">
-        <div className="absolute inset-y-0 left-0 right-0 rounded-full bg-[var(--border)]" />
-        <div
-          className="absolute inset-y-0 rounded-full bg-[var(--primary)]"
-          style={{ left: `${Math.min(100, (bench.p25 / Math.max(1, bench.p90)) * 100)}%`, width: `${Math.min(100, ((bench.p90 - bench.p25) / Math.max(1, bench.p90)) * 100)}%`, opacity: 0.25 }}
-        />
-        <div
-          className="absolute top-1.5 h-7 w-0 border-2 border-dashed border-[var(--primary)]"
-          style={{ left: `${Math.min(100, ((bench.median ?? bench.p25) / Math.max(1, bench.p90)) * 100)}%` }}
-        />
+      <div className="flex flex-1 flex-col items-center justify-center py-4">
+        <p className="font-mono text-3xl font-extrabold tracking-tight text-[var(--primary)]">
+          {d}j {h}h {m}min {s}s
+        </p>
+        <p className="mt-2 text-xs text-muted">Rendez-vous : {dateFmt(app.appointmentDate)}</p>
       </div>
-      <div className="flex justify-between text-xs text-muted">
-        <span>
-          P25 {add(bench.p25)} · M {add(bench.median ?? bench.p25)} · P90 {add(bench.p90)}
-        </span>
-      </div>
-      <p className="mt-1 text-[10px] text-muted">Fenêtre estimée depuis le {dateFmt(base)} · n = {bench.n}</p>
     </Card>
   );
 }
@@ -247,23 +253,28 @@ function PositionCard({ app }: { app: MyApp }) {
   if (pdf.isLoading || !bench) return null;
   if (pdf.data?.insufficientData || bench.myWaitDays == null) {
     return (
-      <Card>
+      <Card className="flex flex-col">
         <h2 className="text-sm font-bold">{t.journey.myPosition}</h2>
-        <p className="mt-3 text-sm text-muted">{t.dashboard.notEnoughHint(pdf.data?.n ?? 0)}</p>
+        <div className="flex flex-1 items-center justify-center">
+          <p className="text-sm text-muted">{t.dashboard.notEnoughHint(pdf.data?.n ?? 0)}</p>
+        </div>
       </Card>
     );
   }
   const hist = pdf.data!.data.hist;
-  const idx = hist.findIndex((b) => bench.myWaitDays! <= Number(String(b.bucket.split("-")[1] === "+" ? Infinity : b.bucket.split("-")[1])));
+  const idx = hist.findIndex((b) => {
+    const upper = b.bucket.endsWith("+") ? Infinity : Number(b.bucket.split("-")[1]);
+    return bench.myWaitDays! <= upper;
+  });
   const option = histogramBinOption(hist, idx === -1 ? hist.length - 1 : idx);
   return (
-    <Card>
+    <Card className="flex flex-col">
       <h2 className="text-sm font-bold">{t.journey.myPosition}</h2>
-      <div className="h-40">
+      <div className="min-h-40 flex-1">
         <EChartBox option={option} />
       </div>
       {bench.longerPct != null ? (
-        <p className="text-xs text-muted">{t.journey.gauge.longer(bench.longerPct)}</p>
+        <p className="mt-2 text-xs text-muted">{t.journey.gauge.longer(bench.longerPct)}</p>
       ) : null}
     </Card>
   );
@@ -282,58 +293,22 @@ function histogramBinOption(hist: { bucket: string; count: number }[], myIdx: nu
   };
 }
 
-function CohortSnapshot({ app }: { app: MyApp }) {
-  const router = useRouter();
-  const exact = useQuery<{ n: number; insufficientData: boolean; data: { funnel: Record<string, number>; medianSinceAppointment: number | null } | null }>({
-    queryKey: ["cohort", app.id],
-    queryFn: () => fetch(`/api/cohorts/same-appointment?applicationId=${app.id}&window=exact`).then((r) => r.json()),
-  });
-  return (
-    <Card>
-      <div className="flex items-center justify-between">
-        <h2 className="text-sm font-bold">{t.journey.cohort}</h2>
-      </div>
-      {exact.isLoading ? (
-        <Skeleton className="h-24 w-full" />
-      ) : exact.data?.insufficientData || !exact.data?.data ? (
-        <p className="mt-3 text-sm text-muted">{t.dashboard.notEnoughHint(exact.data?.n ?? 0)}</p>
-      ) : (
-        <div className="mt-2 flex gap-2 text-center text-xs">
-          {[
-            ["RDV", exact.data.n],
-            ["Dossiers", exact.data.data.funnel.dossiers_envoyes],
-            ["Réponses", exact.data.data.funnel.reponses_recues],
-            ["Accordés", exact.data.data.funnel.accorde],
-            ["Refusés", exact.data.data.funnel.refuse],
-          ].map(([label, value]) => (
-            <div key={String(label)} className="flex-1 rounded-lg border border-[var(--border)] p-2">
-              <p className="text-base font-bold">{String(value)}</p>
-              <p className="text-muted">{String(label)}</p>
-            </div>
-          ))}
-        </div>
-      )}
-      <Button variant="secondary" size="sm" className="mt-3" onClick={() => router.push(`/cohorts?applicationId=${app.id}`)}>
-        Voir en détail
-      </Button>
-    </Card>
-  );
-}
-
 function SummaryCard({ app }: { app: MyApp }) {
   const router = useRouter();
   return (
-    <Card>
+    <Card className="flex flex-col">
       <h2 className="text-sm font-bold">{t.journey.summary}</h2>
-      <dl className="mt-3 space-y-1 text-sm">
+      <dl className="mt-3 flex-1 space-y-1 text-sm">
         <Row k="Dossier envoyé" v={dateFmt(app.docsSentDate)} />
         <Row k="Rendez-vous" v={dateFmt(app.appointmentDate)} />
         <Row k="Réponse" v={dateFmt(app.responseDate)} />
         <Row k="Résultat" v={app.outcome === "accorde" ? "Accordé 🎉" : app.outcome === "refuse" ? "Refusé" : "En attente"} />
       </dl>
-      <Button variant="secondary" size="sm" className="mt-3" onClick={() => router.push("/contribute")}>
-        Modifier / compléter
-      </Button>
+      <div className="mt-3">
+        <Button variant="secondary" size="sm" onClick={() => router.push("/contribute")}>
+          Modifier / compléter
+        </Button>
+      </div>
     </Card>
   );
 }

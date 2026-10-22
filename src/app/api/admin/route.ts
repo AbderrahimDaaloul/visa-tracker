@@ -1,6 +1,5 @@
 import { NextResponse } from "next/server";
 import { json, withApi } from "@/lib/api";
-import { getSessionUser } from "@/lib/auth";
 import { requireRole } from "@/lib/adminGuard";
 import { rowsOf } from "@/lib/db/client";
 
@@ -45,13 +44,21 @@ export function GET(): Promise<NextResponse> {
         (SELECT count(*)::int FROM applications WHERE status = 'cache') AS apps_hidden,
         (SELECT count(*)::int FROM flags WHERE status = 'ouvert') AS flags_open
     `);
-    void getSessionUser;
+    const audit = await db.execute(`
+      SELECT l.id, l.actor_role, l.action, l.detail, l.created_at::text AS created_at,
+             u.pseudo AS actor
+      FROM audit_log l
+      LEFT JOIN users u ON u.id = l.actor_id
+      ORDER BY l.created_at DESC
+      LIMIT 50
+    `);
     return json({
       stats: rowsOf(stats)[0],
       users: rowsOf(users),
       entries: rowsOf(entries),
       openFlags: rowsOf(openFlags),
-      viewer: { role: user },
+      audit: rowsOf(audit),
+      viewer: { role: user.role },
     });
   });
 }

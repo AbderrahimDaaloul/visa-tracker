@@ -1,10 +1,15 @@
 import { apiError, json, rateLimit, readJsonBody, withApi } from "@/lib/api";
 import { requireUser } from "@/lib/auth";
-import { MAX_ACTIVE_APPLICATIONS, MAX_CONTRIBUTIONS_PER_DAY } from "@/lib/constants";
+import {
+  FIXED_CENTER_NAME,
+  FIXED_VISA_TYPE,
+  MAX_CONTRIBUTIONS_PER_DAY,
+  defaultIntake,
+} from "@/lib/constants";
 import { ensureDb } from "@/lib/db/init";
-import { applications, events } from "@/lib/db/schema";
+import { applications, centers, events } from "@/lib/db/schema";
 import { createApplicationSchema } from "@/lib/validation";
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, ne } from "drizzle-orm";
 import type { NextResponse } from "next/server";
 
 export const dynamic = "force-dynamic";
@@ -18,43 +23,38 @@ export async function POST(req: Request): Promise<NextResponse> {
     const body = createApplicationSchema.parse(await readJsonBody(req));
     const db = await ensureDb();
 
-    const dup = await db
+    const centerRows = await db
       .select()
-      .from(applications)
-      .where(
-        and(
-          eq(applications.userId, user.id),
-          eq(applications.centerId, body.centerId),
-          eq(applications.intake, body.intake),
-          eq(applications.status, "actif")
-        )
-      )
+      .from(centers)
+      .where(eq(centers.name, FIXED_CENTER_NAME))
       .limit(1);
-    if (dup[0]) {
-      return apiError("Vous avez déjà une candidature active pour ce centre et cette intake.", 409);
-    }
-    const activeCount = await db
-      .select({ n: sql<number>`count(*)::int` })
+    const center = centerRows[0];
+    if (!center) return apiError("Le centre Almaviva Tunisie n'est pas configuré.", 503);
+
+    const intake = defaultIntake();
+    const existing = await db
+      .select({ id: applications.id })
       .from(applications)
-      .where(and(eq(applications.userId, user.id), eq(applications.status, "actif")));
-    if ((activeCount[0]?.n ?? 0) >= MAX_ACTIVE_APPLICATIONS) {
-      return apiError(`Maximum ${MAX_ACTIVE_APPLICATIONS} candidatures actives.`, 409);
+      .where(and(eq(applications.userId, user.id), ne(applications.status, "supprime")))
+      .limit(1);
+    if (existing[0]) {
+      return apiError("Vous avez déjà une candidature. Modifiez-la au lieu d'en créer une nouvelle.", 409);
     }
     const inserted = await db
       .insert(applications)
       .values({
         userId: user.id,
-        centerId: body.centerId,
-        visaType: body.visaType,
-        intake: body.intake,
-        studyLevel: body.studyLevel ?? null,
-        fieldOfStudy: body.fieldOfStudy ?? null,
+        centerId: center.id,
+        visaType: FIXED_VISA_TYPE,
+        intake,
+        studyLevel: body.studyLevel,
+        fieldOfStudy: null,
       })
       .returning();
     await db.insert(events).values({
       applicationId: inserted[0].id,
       type: "creation",
-      payload: body,
+      payload: { centerId: center.id, visaType: FIXED_VISA_TYPE, intake, studyLevel: body.studyLevel },
     });
     return json({ application: inserted[0] }, 201);
   });

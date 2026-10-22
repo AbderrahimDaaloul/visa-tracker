@@ -29,23 +29,16 @@ export const users = pgTable("users", {
   pseudo: text("pseudo").notNull(),
   pseudoLower: text("pseudo_lower").notNull().unique(),
   pseudoChangedAt: timestamp("pseudo_changed_at", { withTimezone: true }),
+  passwordHash: text("password_hash"),
+  authProvider: text("auth_provider").notNull().default("password"), // password | google
+  emailVerifiedAt: timestamp("email_verified_at", { withTimezone: true }).defaultNow(),
   role: text("role").notNull().default("student"), // student | moderator | admin
   trustScore: integer("trust_score").notNull().default(50),
   language: text("language").notNull().default("fr"),
-  showPseudoInCohorts: boolean("show_pseudo_in_cohorts").notNull().default(false),
+  showPseudoInCohorts: boolean("show_pseudo_in_cohorts").notNull().default(true),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   lastLoginAt: timestamp("last_login_at", { withTimezone: true }),
   bannedAt: timestamp("banned_at", { withTimezone: true }),
-});
-
-export const otpCodes = pgTable("otp_codes", {
-  id: serial("id").primaryKey(),
-  emailHash: text("email_hash").notNull(),
-  codeHash: text("code_hash").notNull(),
-  codePlain: text("code_plain"),
-  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-  expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
-  usedAt: timestamp("used_at", { withTimezone: true }),
 });
 
 export const sessions = pgTable("sessions", {
@@ -66,7 +59,7 @@ export const applications = pgTable("applications", {
   centerId: integer("center_id").notNull(),
   visaType: text("visa_type").notNull().default("etudiant_d"), // etudiant_d | cours_langue | autre
   intake: text("intake").notNull(), // e.g. "2026-09"
-  studyLevel: text("study_level"), // licence | master | phd
+  studyLevel: text("study_level"), // licence | master
   fieldOfStudy: text("field_of_study"),
   appointmentDate: date("appointment_date"),
   appointmentSlot: text("appointment_slot"), // matin | apresmidi
@@ -75,7 +68,7 @@ export const applications = pgTable("applications", {
   docsSubmissionMode: text("docs_submission_mode"), // centre | courier | en_ligne
   outcome: text("outcome").notNull().default("en_attente"), // en_attente | accorde | refuse
   responseDate: date("response_date"),
-  rejectionReason: text("rejection_reason"), // docs_manquants | preuves_fina | admission | non_precise
+  rejectionReason: text("rejection_reason"), // texte libre (max 300)
   status: text("status").notNull().default("actif"), // actif | cache | supprime
   flaggedAt: timestamp("flagged_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
@@ -107,6 +100,15 @@ export const notificationPrefs = pgTable("notification_prefs", {
   cohortUpdates: boolean("cohort_updates").notNull().default(true),
 });
 
+export const auditLog = pgTable("audit_log", {
+  id: serial("id").primaryKey(),
+  actorId: uuid("actor_id"),
+  actorRole: text("actor_role").notNull(),
+  action: text("action").notNull(),
+  detail: jsonb("detail"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
 export const meta = pgTable("meta", {
   key: text("key").primaryKey(),
   value: text("value"),
@@ -118,4 +120,4 @@ export type User = typeof users.$inferSelect;
 export type Application = typeof applications.$inferSelect;
 export type Flag = typeof flags.$inferSelect;
 
-export const schema = { centers, users, otpCodes, sessions, applications, events, flags, notificationPrefs, meta };
+export const schema = { centers, users, sessions, applications, events, flags, notificationPrefs, auditLog, meta };
